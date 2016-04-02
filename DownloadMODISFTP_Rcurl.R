@@ -3,20 +3,18 @@
 # This script uses RCurl and ModisDownload to access an ftp server and download desired modis tiles
 
 # Run the following in bash before starting R
- #module load proj.4/4.8.0
- #module load gdal/gcc/1.11
-#
-#  module load R
-# module load gcc/4.9.0
-# R
-
+module load proj.4/4.8.0
+module load gdal/gcc/1.11 
+module load R
+module load gcc/4.9.0
+R
 
 
 rm(list=ls())
-source('R:\\Mann Research\\IFPRI_Ethiopia_Drought_2016\\IFPRI_Ethiopia_Drought_Code\\ModisDownload.R')
-source('G:\\Faculty\\Mann/scripts/SplineAndOutlierRemoval.R')
-#source('/groups/manngroup/scripts/SplineAndOutlierRemoval.R')
-#source('/groups/manngroup/India_Index/India-Index-Insurance-Code/RasterChuckProcessing.R')
+#source('R:\\Mann Research\\IFPRI_Ethiopia_Drought_2016\\IFPRI_Ethiopia_Drought_Code\\ModisDownload.R')
+#source('G:\\Faculty\\Mann/scripts/SplineAndOutlierRemoval.R')
+source('/groups/manngroup/scripts/SplineAndOutlierRemoval.R')
+source('/groups/manngroup/India_Index/India-Index-Insurance-Code/RasterChuckProcessing.R')
 
 library(RCurl)
 library(raster)
@@ -218,60 +216,61 @@ registerDoParallel(8)
   
 
 # Stack relevant data -----------------------------------------------------
-  setwd('R:/Mann_Research/IFPRI_Ethiopia_Drought_2016/Data/VegetationIndex/')  # folder where  EVI .tifs are 
-   
+
+  setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/VegetationIndex/')  # folder where  EVI .tifs are
   # create data stack for each variable and tile 
+ 
   foreach(product =  c('composite_day_of_the_year',
-	'EVI','NDVI','pixel_reliability')) %dopar% {  
-  for( tile_2_process in  tiles){
-  	# Set up data
-  	flist = list.files(".",glob2rx(paste('*',tile_2_process,'.250m_16_days_',product,'.tif$',sep='')), 
-		full.names = TRUE)
-  	flist_dates = gsub("^.*_([0-9]{7})_.*$", "\\1",flist,perl = T)  # Strip dates
-  	flist = flist[order(flist_dates)]  # file list in order
-  	# stack data and save
-  	stacked = stack(flist)
-  	names(stacked) = flist_dates
-  	assign(paste(product,'stack',tile_2_process,sep='_'),stacked)
-  	save( list=paste(product,'stack',tile_2_process,sep='_') ,
-		file = paste('../Data Stacks/Raw Stacks/',product,'_stack_',tile_2_process,'.RData',sep='') )
+ 	 'EVI','NDVI','pixel_reliability')) %dopar% {  
+    for( tile_2_process in  tiles){
+  	 # Set up data
+  	 flist = list.files(".",glob2rx(paste('*',tile_2_process,'.250m_16_days_',product,'.tif$',sep='')), 
+ 	 	 full.names = TRUE)
+  	 flist_dates = gsub("^.*_([0-9]{7})_.*$", "\\1",flist,perl = T)  # Strip dates
+  	 flist = flist[order(flist_dates)]  # file list in order
+  	 # stack data and save
+  	 stacked = stack(flist)
+  	 names(stacked) = flist_dates
+  	 assign(paste(product,'stack',tile_2_process,sep='_'),stacked)
+	 dir.create(file.path('../Data Stacks/Raw Stacks/'), showWarnings=F,recursive=T) # create stack directory if doesnt exist
+  	 save( list=paste(product,'stack',tile_2_process,sep='_') ,
+		 file = paste('../Data Stacks/Raw Stacks/',product,'_stack_',tile_2_process,'.RData',sep='') )
   }}
 
-  # Stack land cover data NOTE: automatically fills missing years with most recent LC available
-  setwd('/groups/manngroup/India_Index/Data/MODISLandCover/India')
-  for(product in c('MCD12Q1')){
-  for( tile in c( 'h24v06','h24v05')){
-        # Set up data
-        flist = list.files(".",glob2rx(paste(product,'*',tile,'.Land_Cover_Type_2.tif$',sep='')),
-                full.names = TRUE)
-        flist_dates = gsub("^.*_([0-9]{7})_.*$", "\\1",flist,perl = T)  # Strip dates
-        flist = flist[order(flist_dates)]  # file list in order
-        #create duplicates of most recent year till end of study period
-	studyperiod = format(seq(strptime(dates[1],'%Y-%m-%d'),strptime(dates[2],'%Y-%m-%d'), by='year'),'%Y%j') 
-        missingyears = outersect(flist_dates, studyperiod)
-	mostrecent = flist[length(flist)]
-	flistfull = c(flist,rep(mostrecent,length(missingyears)))	
-        # stack data and save
-        stacked = stack(flistfull)
-        names(stacked) = c(flist_dates,missingyears)
-        assign(paste(product,'stack',tile,sep='_'),stacked)
-        save( list=paste(product,'stack',tile,sep='_') ,
-                file = paste('../../Data Stacks/LC Stacks/',product,'_stack_',tile,'.RData',sep='') )
-  }}
+#  # Stack land cover data NOTE: automatically fills missing years with most recent LC available
+#  setwd('/groups/manngroup/India_Index/Data/MODISLandCover/India')
+#  for(product in c('MCD12Q1')){
+#  for( tile in c( 'h24v06','h24v05')){
+#        # Set up data
+#        flist = list.files(".",glob2rx(paste(product,'*',tile,'.Land_Cover_Type_2.tif$',sep='')),
+#                full.names = TRUE)
+#        flist_dates = gsub("^.*_([0-9]{7})_.*$", "\\1",flist,perl = T)  # Strip dates
+#        flist = flist[order(flist_dates)]  # file list in order
+#        #create duplicates of most recent year till end of study period
+#	studyperiod = format(seq(strptime(dates[1],'%Y-%m-%d'),strptime(dates[2],'%Y-%m-%d'), by='year'),'%Y%j') 
+#        missingyears = outersect(flist_dates, studyperiod)
+#	mostrecent = flist[length(flist)]
+#	flistfull = c(flist,rep(mostrecent,length(missingyears)))	
+#        # stack data and save
+#        stacked = stack(flistfull)
+#        names(stacked) = c(flist_dates,missingyears)
+#        assign(paste(product,'stack',tile,sep='_'),stacked)
+#        save( list=paste(product,'stack',tile,sep='_') ,
+#                file = paste('../../Data Stacks/LC Stacks/',product,'_stack_',tile,'.RData',sep='') )
+#  }}
   
 
 # Limit stacks to common dates -------------------------------------------
-  setwd('/groups/manngroup/India_Index/Data')
+  setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/')
 
   # load data stacks from both directories
-  stack_types_2_load =c('blue_reflectance', 'MIR_reflectance',
-	'NIR_reflectance','red_reflectance','EVI','NDVI','pixel_reliability')
+  stack_types_2_load =c('composite_day_of_the_year','EVI','NDVI','pixel_reliability')
   dir1 = list.files('./Data Stacks/Raw Stacks/','.RData',full.names=T)
   lapply(dir1, load,.GlobalEnv)
 
   # limit stacks to common elements
   for(product in stack_types_2_load ){  
-  for( tile in c( 'h24v06','h24v05')){
+  for( tile in tiles){
 	 # find dates that exist in all datasets for current tile
          all_dates = lapply(paste(stack_types_2_load,'stack',tile,sep='_'),function(x){names(get(x))})
 	 # restrict to common dates 
@@ -288,12 +287,10 @@ registerDoParallel(8)
   
 # Remove low quality cells & assign projection ------------------------------------------------
   # load data in previous section and run common dates
-  setwd('/groups/manngroup/India_Index/Data/Data Stacks')
+  setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data//Data Stacks')
 
   reliability_prefix = 'pixel_reliability'
-  products2removeclouds = c('blue_reflectance', 'MIR_reflectance',
-        'NIR_reflectance','red_reflectance','EVI','NDVI')
-  tiles = c( 'h24v05','h24v06')
+  products2removeclouds = c('composite_day_of_the_year','EVI','NDVI')
   for(product in products2removeclouds){
   for( tile in tiles){
 	print(paste('Working on',product,tile))
@@ -307,6 +304,7 @@ registerDoParallel(8)
 	foreach(i=1:dim(data_stackvalues)[3]) %dopar% { 
 		data_stackvalues[[i]][reliability_stackvalues[[i]]!=0]=NA}
         assign(paste(product,'_stack_',tile,sep=''),data_stackvalues)
+        dir.create(file.path('../Data Stacks/WO Clouds'), showWarnings=F,recursive=T) # create stack directory i$
 	save(list=paste(product,'_stack_',tile,sep=''),
 		file = paste('WO Clouds/',product,'_stack_',tile,'_wo_clouds.RData',sep=''))
   }} 
@@ -314,66 +312,60 @@ registerDoParallel(8)
 
 # Remove non-agricultural lands ---------------------------------------------
 # use MCD12Q1 landcover classification 2 (less exclusion of built up areas) 
-
-  setwd('/groups/manngroup/India_Index/Data/Data Stacks')
-
-  # load data stacks from both directories
-  dir1 = list.files('./WO Clouds/','.RData',full.names=T)
-  lapply(dir1, load,.GlobalEnv)
-  dir2 = list.files('./LC Stacks/','.RData',full.names=T)
-  lapply(dir2, load,.GlobalEnv)
-
-
-  LandCover_product = 'MCD12Q1'
-  products2removeLC = c('blue_reflectance', 'MIR_reflectance',
-        'NIR_reflectance','red_reflectance','EVI','NDVI','pixel_reliability')
-  tiles = c( 'h24v05','h24v06')
-  for(product in products2removeLC){
-  for( tile in tiles){
-        print(paste('Working on',product,tile))
-        # load land cover data
-        LC_stackvalues = get(paste(LandCover_product,'_stack_',tile,sep=''))
-	LC_dates = format(strptime( gsub("^.*X([0-9]+).*$", "\\1", names(LC_stackvalues)),format='%Y%j'),'%Y')
-        # load product data 
-        data_stackvalues = get(paste(product,'_stack_',tile,sep=''))
-        data_dates = format(strptime( gsub("^.*X([0-9]+).*$", "\\1", names(data_stackvalues)),format='%Y%j'),'%Y')
-
-        foreach(i=1:dim(data_stackvalues)[3]) %dopar% {
-		# get the land cover data for the current product layer
-		LC_value = subset(LC_stackvalues, seq(1,length(LC_dates))[LC_dates == data_dates[i]]) 
-		# restrict to area with crops (code = 12) 
-                data_stackvalues[[i]][LC_value!=12]=NA}
-        # save data 
-	assign(paste(product,'_stack_',tile,sep=''),data_stackvalues)
-        save(list=paste(product,'_stack_',tile,sep=''),
-                file = paste('./WO Clouds Crops/',product,'_stack_',tile,'_wo_clouds_crops.RData',sep=''))
-  }}
+#
+#  setwd('/groups/manngroup/India_Index/Data/Data Stacks')
+#
+#  # load data stacks from both directories
+#  dir1 = list.files('./WO Clouds/','.RData',full.names=T)
+#  lapply(dir1, load,.GlobalEnv)
+#  dir2 = list.files('./LC Stacks/','.RData',full.names=T)
+#  lapply(dir2, load,.GlobalEnv)
+#
+#
+#  LandCover_product = 'MCD12Q1'
+#  products2removeLC = c('blue_reflectance', 'MIR_reflectance',
+#        'NIR_reflectance','red_reflectance','EVI','NDVI','pixel_reliability')
+#  tiles = c( 'h24v05','h24v06')
+#  for(product in products2removeLC){
+#  for( tile in tiles){
+#        print(paste('Working on',product,tile))
+#        # load land cover data
+#        LC_stackvalues = get(paste(LandCover_product,'_stack_',tile,sep=''))
+#	LC_dates = format(strptime( gsub("^.*X([0-9]+).*$", "\\1", names(LC_stackvalues)),format='%Y%j'),'%Y')
+#        # load product data 
+#        data_stackvalues = get(paste(product,'_stack_',tile,sep=''))
+#        data_dates = format(strptime( gsub("^.*X([0-9]+).*$", "\\1", names(data_stackvalues)),format='%Y%j'),'%Y')
+#
+#        foreach(i=1:dim(data_stackvalues)[3]) %dopar% {
+#		# get the land cover data for the current product layer
+#		LC_value = subset(LC_stackvalues, seq(1,length(LC_dates))[LC_dates == data_dates[i]]) 
+#		# restrict to area with crops (code = 12) 
+#                data_stackvalues[[i]][LC_value!=12]=NA}
+#        # save data 
+#	assign(paste(product,'_stack_',tile,sep=''),data_stackvalues)
+#        save(list=paste(product,'_stack_',tile,sep=''),
+#                file = paste('./WO Clouds Crops/',product,'_stack_',tile,'_wo_clouds_crops.RData',sep=''))
+#  }}
 
 
 
 # Rescale and set valid ranges of data  ---------------------------------------------
-  # NOTE: This is run through sbatch with 128gb node 
-  setwd('/groups/manngroup/India_Index/Data/Data Stacks')
+  setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data//Data Stacks')
 
   # load data stacks from both directories
-  dir1 = list.files('./WO Clouds Crops/','.RData',full.names=T)
+  dir1 = list.files('./WO Clouds/','.RData',full.names=T)
   lapply(dir1, load,.GlobalEnv)
 
   # setup a dataframe with valid ranges and scale factors
   valid = data.frame(stack='NDVI', fill= -3000,validL=-2000,validU=10000,
 		scale=0.0001,stringsAsFactors=F)
   valid = rbind(valid,c('EVI',-3000,-2000,10000,0.0001))
-  valid = rbind(valid,c('blue_reflectance',-1000,0,10000,0.0001))
-  valid = rbind(valid,c('red_reflectance',-1000,0,10000,0.0001))
-  valid = rbind(valid,c('MIR_reflectance',-1000,0,10000,0.0001))
-  valid = rbind(valid,c('NIR_reflectance',-1000,0,10000,0.0001))
   valid 
 
   rm(list=ls()[grep('stack',ls())]) # running into memory issues clear stacks load one by one
 
   # Loop through valid ranges  
   products2clean = unique(valid$stack)
-  tiles = c( 'h24v05','h24v06')
   for(product in products2clean){
   for( tile in tiles){
         print(paste('Working on',product,tile))	
@@ -386,13 +378,16 @@ registerDoParallel(8)
         	x[x==as.numeric(valid_values$fill)]=NA
         	x[x < as.numeric(valid_values$validL)]=NA
         	x[x > as.numeric(valid_values$validU)]=NA
-        	x = x * as.numeric(valid_values$scale)
+        	#x = x * as.numeric(valid_values$scale)
         	x}
+        junk = foreach(i=1:dim(data_stackvalues)[3]) %dopar% {
+                data_stackvalues[[i]]=ScaleClean(data_stackvalues[[i]])
+		return(i)} 
 
-	RasterChunkProcessing(in_stack=data_stackvalues,in_stack_nm=paste(product,'_stack_',tile,sep='')
-	    ,block_width=5,worker_number=12,out_path='./WO Clouds Crops Scaled/',
-	    out_nm_postfix='WO_Clouds_Crops_Scaled', FUN=ScaleClean)
-
+        assign(paste(product,'_stack_',tile,sep=''),data_stackvalues)
+        dir.create(file.path('../Data Stacks/WO Clouds Clean'), showWarnings=F,recursive=T) # create stack directory i$
+        save(list=paste(product,'_stack_',tile,sep=''),
+                file = paste('WO Clouds Clean/',product,'_stack_',tile,'_wo_clouds_clean.RData',sep=''))
   }}
 
 
