@@ -3,29 +3,29 @@
 # This script uses RCurl and ModisDownload to access an ftp server and download desired modis tiles
 
 # Run the following in bash before starting R
- module load proj.4/4.8.0
- module load gdal/gcc/1.11
-# module load R/3.0.2
- module load R
- module load gcc/4.9.0
- R
+ #module load proj.4/4.8.0
+ #module load gdal/gcc/1.11
+#
+#  module load R
+# module load gcc/4.9.0
+# R
 
 
 
 rm(list=ls())
-#source('G:\\Faculty\\Mann\\Projects\\India_Index_Insurance\\India_Index_Insurance_Code\\ModisDownload.R')
-#source('G:\\Faculty\\Mann/scripts/SplineAndOutlierRemoval.R')
-source('/groups/manngroup/scripts/SplineAndOutlierRemoval.R')
-source('/groups/manngroup/India_Index/India-Index-Insurance-Code/RasterChuckProcessing.R')
+source('R:\\Mann Research\\IFPRI_Ethiopia_Drought_2016\\IFPRI_Ethiopia_Drought_Code\\ModisDownload.R')
+source('G:\\Faculty\\Mann/scripts/SplineAndOutlierRemoval.R')
+#source('/groups/manngroup/scripts/SplineAndOutlierRemoval.R')
+#source('/groups/manngroup/India_Index/India-Index-Insurance-Code/RasterChuckProcessing.R')
 
 library(RCurl)
 library(raster)
-#library(MODISTools)
-#library(rgdal)
+library(MODISTools)
+library(rgdal)
 library(sp)
 library(maptools)
 #library(rts)
-#library(gdalUtils)
+library(gdalUtils)
 library(foreach)
 library(doParallel)
 library(ggplot2)
@@ -74,14 +74,14 @@ registerDoParallel(8)
   #GetProducts()
   
   # Product Filters 
-  products =  c('MYD13Q1','MOD13Q1')  #EVI c('MYD13Q1','MOD13Q1')  , land cover = 'MCD12Q1' for 250m and landcover ='MCD12Q2'
-  location = c(30.259,75.644)  # Lat Lon of a location of interest within your tiles listed above #India c(-31.467934,-57.101319)  #
-  tiles =   c('h24v05','h24v06')   # India example c('h13v12')
-  dates = c('2002-01-01','2016-02-02') # example c('year-month-day',year-month-day') c('2002-07-04','2016-02-02') 
-  ftp = 'ftp://ladsweb.nascom.nasa.gov/allData/51/'    # allData/6/ for evi, 
+  products =  c('MYD13Q1')  #EVI c('MYD13Q1','MOD13Q1')  , land cover = 'MCD12Q1' for 250m and landcover ='MCD12Q2'
+  location = c(9.145000, 40.489673)  # Lat Lon of a location of interest within your tiles listed above #India c(-31.467934,-57.101319)  #
+  tiles =   c('h21v07','h22v07','h21v08','h22v08')   # India example c('h13v12')
+  dates = c('2010-01-01','2016-03-30') # example c('year-month-day',year-month-day') c('2002-07-04','2016-02-02') 
+  ftp = 'ftp://ladsweb.nascom.nasa.gov/allData/6/'    # allData/6/ for evi, /51/ for landcover
   # allData/51/ for landcover DOESn't WORK jUST PULL FROM FTP
-  #strptime(gsub("^.*A([0-9]+).*$", "\\1",GetDates(location[1], location[2],products[1])),'%Y%j') # get list of all available dates for products[1]
-  out_dir = '/groups/manngroup/India_Index/Data/MODISLandCover/India/'
+  strptime(gsub("^.*A([0-9]+).*$", "\\1",GetDates(location[1], location[2],products[1])),'%Y%j') # get list of all available dates for products[1]
+  out_dir = 'R:\\Mann_Research\\IFPRI_Ethiopia_Drought_2016\\Data\\VegetationIndex'
   setwd(out_dir)
   
  
@@ -178,14 +178,14 @@ registerDoParallel(8)
 # Get Names of all Layers in HDF ------------------------------------------
 
 
-  get_subdatasets('./MCD12Q1.A2002001.h24v05.051.2014287172414.hdf')
+  get_subdatasets('./MYD13Q1.A2015361.h22v08.006.2016012202549.hdf')
   
     
 # Reproject ---------------------------------------------------------------
 
   
-  band_subset = "1 1 0 0 1 1 1 0 0 1 1 0 0 0 0 0"  # Example: first seven and last layer'1 1 1 1 1 1 1 0 0 0 0 1" landcover= "1 1 0 0 1 1 1 0 0 1 1 0 0 0 0 0"
-  output_pattern = 'Land_Cover_Type_1.tif' # '250m_16_days_EVI.tif' looks for existing EVI tif files to avoid repeating
+  band_subset = "0 0 0 0 0 0 0 0 0 0 1 0"  # EVI 1 1 0 0 0 0 0 0 0 0 1 1# Example: first seven and last layer'1 1 1 1 1 1 1 0 0 0 0 1" landcover= "1 1 0 0 1 1 1 0 0 1 1 0 0 0 0 0"
+  output_pattern = '250m_16_days_EVI.tif' # '250m_16_days_EVI.tif' looks for existing EVI tif files to avoid repeating  Land_Cover_Type_1.tif
    
   for (i in (1:length(files$reproj_files))){
       print(i)
@@ -218,12 +218,12 @@ registerDoParallel(8)
   
 
 # Stack relevant data -----------------------------------------------------
-  setwd('/groups/manngroup/India_Index/Data/India')  # folder where  EVI .tifs are 
+  setwd('R:/Mann_Research/IFPRI_Ethiopia_Drought_2016/Data/VegetationIndex/')  # folder where  EVI .tifs are 
    
   # create data stack for each variable and tile 
-  foreach(product =  c('blue_reflectance','MIR_reflectance','NIR_reflectance','red_reflectance',
+  foreach(product =  c('composite_day_of_the_year',
 	'EVI','NDVI','pixel_reliability')) %dopar% {  
-  for( tile_2_process in c( 'h24v06','h24v05')){
+  for( tile_2_process in  tiles){
   	# Set up data
   	flist = list.files(".",glob2rx(paste('*',tile_2_process,'.250m_16_days_',product,'.tif$',sep='')), 
 		full.names = TRUE)
