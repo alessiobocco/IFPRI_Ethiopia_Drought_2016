@@ -27,7 +27,7 @@ library(gdalUtils)
 library(foreach)
 library(doParallel)
 library(ggplot2)
-registerDoParallel(8)
+registerDoParallel(32)
 
 
 # Functions ---------------------------------------------------------------
@@ -228,6 +228,8 @@ registerDoParallel(8)
  	 	 full.names = TRUE)
   	 flist_dates = gsub("^.*_([0-9]{7})_.*$", "\\1",flist,perl = T)  # Strip dates
   	 flist = flist[order(flist_dates)]  # file list in order
+         flist_dates = flist_dates[order(flist_dates)]  # file_dates list in order
+
   	 # stack data and save
   	 stacked = stack(flist)
   	 names(stacked) = flist_dates
@@ -246,6 +248,7 @@ registerDoParallel(8)
 #                full.names = TRUE)
 #        flist_dates = gsub("^.*_([0-9]{7})_.*$", "\\1",flist,perl = T)  # Strip dates
 #        flist = flist[order(flist_dates)]  # file list in order
+#        flist_dates = flist_dates[order(flist_dates)]  # file list in order
 #        #create duplicates of most recent year till end of study period
 #	studyperiod = format(seq(strptime(dates[1],'%Y-%m-%d'),strptime(dates[2],'%Y-%m-%d'), by='year'),'%Y%j') 
 #        missingyears = outersect(flist_dates, studyperiod)
@@ -259,7 +262,7 @@ registerDoParallel(8)
 #                file = paste('../../Data Stacks/LC Stacks/',product,'_stack_',tile,'.RData',sep='') )
 #  }}
   
-
+4
 # Limit stacks to common dates -------------------------------------------
   setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/')
 
@@ -355,6 +358,8 @@ registerDoParallel(8)
   # load data stacks from both directories
   dir1 = list.files('./WO Clouds/','.RData',full.names=T)
   lapply(dir1, load,.GlobalEnv)
+  dir.create(file.path('../Data Stacks/WO Clouds Clean/tifs/'), showWarnings=F,recursive=T) # create dir for tifs
+
 
   # setup a dataframe with valid ranges and scale factors
   valid = data.frame(stack='NDVI', fill= -3000,validL=-2000,validU=10000,
@@ -381,14 +386,38 @@ registerDoParallel(8)
         	#x = x * as.numeric(valid_values$scale)
         	x}
         junk = foreach(i=1:dim(data_stackvalues)[3]) %dopar% {
-                data_stackvalues[[i]]=ScaleClean(data_stackvalues[[i]])
-		return(i)} 
+                clean = ScaleClean(data_stackvalues[[i]])
+		writeRaster(clean, filename=paste('WO Clouds Clean/tifs/',product,'_stack_',tile,'_wo_clouds_clean_',
+                 names(data_stackvalues[[i]]),'.tif',sep=''), overwrite=T)
+ 	        return(0)
+		} 
 
         assign(paste(product,'_stack_',tile,sep=''),data_stackvalues)
         dir.create(file.path('../Data Stacks/WO Clouds Clean'), showWarnings=F,recursive=T) # create stack directory i$
         save(list=paste(product,'_stack_',tile,sep=''),
                 file = paste('WO Clouds Clean/',product,'_stack_',tile,'_wo_clouds_clean.RData',sep=''))
   }}
+
+
+
+#  # export tifs for backups
+#  rm(list=ls()[grep('stack',ls())]) # running into memory issues clear stacks load one by one
+#
+#  dir1 = list.files('./WO Clouds Clean/','.RData',full.names=T)
+#  lapply(dir1, load,.GlobalEnv)
+#  rm(list=ls()[grep('composite',ls())]) # remove composite day of year
+#  dir.create(file.path('../Data Stacks/WO Clouds Clean/tifs/'), showWarnings=F,recursive=T) # create stack directory i$
+#
+#  stacks = ls()[grep('stack',ls())]
+#  for( stack in stacks ){
+#	stack_name = stack
+#	stackin = get(stack)
+#	foreach(i= 1:dim(stackin)[3]) %dopar% {
+#		 writeRaster(stackin[[i]], filename=paste('WO Clouds Clean/tifs/',stack_name,'_wo_clouds_clean_',
+#		 names(stackin[[i]]),'.tif',sep=''), overwrite=T)
+#	}
+#  }
+
 
 
   
