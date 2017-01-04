@@ -239,30 +239,9 @@ registerDoParallel(32)
 		 file = paste('../Data Stacks/Raw Stacks/',product,'_stack_',tile_2_process,'.RData',sep='') )
   }}
 
-#  # Stack land cover data NOTE: automatically fills missing years with most recent LC available
-#  setwd('/groups/manngroup/India_Index/Data/MODISLandCover/India')
-#  for(product in c('MCD12Q1')){
-#  for( tile in c( 'h24v06','h24v05')){
-#        # Set up data
-#        flist = list.files(".",glob2rx(paste(product,'*',tile,'.Land_Cover_Type_2.tif$',sep='')),
-#                full.names = TRUE)
-#        flist_dates = gsub("^.*_([0-9]{7})_.*$", "\\1",flist,perl = T)  # Strip dates
-#        flist = flist[order(flist_dates)]  # file list in order
-#        flist_dates = flist_dates[order(flist_dates)]  # file list in order
-#        #create duplicates of most recent year till end of study period
-#	studyperiod = format(seq(strptime(dates[1],'%Y-%m-%d'),strptime(dates[2],'%Y-%m-%d'), by='year'),'%Y%j') 
-#        missingyears = outersect(flist_dates, studyperiod)
-#	mostrecent = flist[length(flist)]
-#	flistfull = c(flist,rep(mostrecent,length(missingyears)))	
-#        # stack data and save
-#        stacked = stack(flistfull)
-#        names(stacked) = c(flist_dates,missingyears)
-#        assign(paste(product,'stack',tile,sep='_'),stacked)
-#        save( list=paste(product,'stack',tile,sep='_') ,
-#                file = paste('../../Data Stacks/LC Stacks/',product,'_stack_',tile,'.RData',sep='') )
-#  }}
   
-4
+
+
 # Limit stacks to common dates -------------------------------------------
   setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/')
 
@@ -392,47 +371,92 @@ registerDoParallel(32)
  	        return(0)
 		} 
 
-        assign(paste(product,'_stack_',tile,sep=''),data_stackvalues)
-        dir.create(file.path('../Data Stacks/WO Clouds Clean'), showWarnings=F,recursive=T) # create stack directory i$
-        save(list=paste(product,'_stack_',tile,sep=''),
-                file = paste('WO Clouds Clean/',product,'_stack_',tile,'_wo_clouds_clean.RData',sep=''))
   }}
 
 
+# Restack clean data -----------------------------------------------------
 
-#  # export tifs for backups
-#  rm(list=ls()[grep('stack',ls())]) # running into memory issues clear stacks load one by one
-#
-#  dir1 = list.files('./WO Clouds Clean/','.RData',full.names=T)
-#  lapply(dir1, load,.GlobalEnv)
-#  rm(list=ls()[grep('composite',ls())]) # remove composite day of year
-#  dir.create(file.path('../Data Stacks/WO Clouds Clean/tifs/'), showWarnings=F,recursive=T) # create stack directory i$
-#
-#  stacks = ls()[grep('stack',ls())]
-#  for( stack in stacks ){
-#	stack_name = stack
-#	stackin = get(stack)
-#	foreach(i= 1:dim(stackin)[3]) %dopar% {
-#		 writeRaster(stackin[[i]], filename=paste('WO Clouds Clean/tifs/',stack_name,'_wo_clouds_clean_',
-#		 names(stackin[[i]]),'.tif',sep=''), overwrite=T)
-#	}
-#  }
+  setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/Data Stacks/WO Clouds Clean/tifs/')  # folder where  EVI .tifs are
+  # create data stack for each variable and tile
+
+  foreach(product =  c('EVI','NDVI')) %do% {
+    for( tile_2_process in  tiles){
+	 print(paste('processing',product,tile_2_process,sep=' '))
+         # Set up data
+         flist = list.files(".",glob2rx(paste(product,'_stack_',tile_2_process,'*','.tif$',sep='')),
+                 full.names = TRUE)
+         flist_dates = gsub("^.*_X([0-9]{7}).*$", "\\1",flist,perl = T)  # Strip dates
+         flist = flist[order(flist_dates)]  # file list in order
+         flist_dates = flist_dates[order(flist_dates)]  # file_dates list in order
+
+         # stack data and save
+         stacked = stack(flist)
+         names(stacked) = flist_dates
+         assign(paste(product,'stack',tile_2_process,'wo_clouds_clean',sep='_'),stacked)
+         save( list=paste(product,'stack',tile_2_process,'wo_clouds_clean',sep='_') ,
+                 file = paste('../../WO Clouds Clean/',product,'_stack_',
+		 tile_2_process,'_wo_clouds_clean','.RData',sep='') )
+  }}
+
+
+# Limit to crop signal ----------------------------------------------------
+
+  ET = readOGR('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/AdminBoundaries/','ETH_adm0')
+  ET = spTransform(ET, CRS(projection(EVI_stack_h21v07_wo_clouds_clean)))
+  set.seed(12)
+  point_sample = SpatialPointsDataFrame(spsample(ET, n = 200, "random"),data=data.frame(class=rep(NA,200)))  # create random point sample
+
+  classes=list(dryag=c(2,82,123,129,153,162,198),
+  	wetag=c(7,11,15,16,18,27,41,47,53,54,77,85,90,91,100,102,105,106,117,119,122,125,133,150,151,152,166,173,178,182,195),
+  	agforest=c(6,8,21,32,61,95,111,128,131,137,143,145,168,169,186,191,193),
+  	arid = c(13,29,56,69,71,78,96,149,156),
+  	semiarid=c(5,14,19,23,24,26,29,30,35,36,37,40,43,44,45,50,57,59,60,63, 64,73,75,76,80,92,103,107,108,114,135,136,141,
+	146,158,167,170,179,197,200),
+  	shrub=c(1,12,17,22,25,39,46,48,49,52,55,62,66,67,72,87,88,89,93,97,104,109,110,113,116,118,132,138,142,144,147,148,154,
+	159,160,164,175,185,187,188,189,190,192),
+  	forest=c(3,4,9,10,28,31,38,42,51,58,68,74,79,81,84,86,94,98,99,101,115,120,121,124,126,127,130,139,140,157,161,163,165,
+	171,174,176,180,181,183,184,194,196),
+  	wetforest=c(20,33,34,65,70,83,112,134,155,199),
+  	water=c(172,177))
+
+  for (i in 1:length(classes)){
+    point_sample$class[classes[[i]]]=names(classes)[i]
+  }
+
+  kmlfile = paste('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/LandUseClassifications', "LU_Training_200N.kml", sep="/")
+  kmlname <- "Land Use Class Training Data"
+  icon <- "http://maps.google.com/mapfiles/kml/pal4/icon57.png"
+  name <- row.names(point_sample)
+  
+  kmlPoints(spTransform(point_sample,CRS("+proj=longlat")), kmlfile=kmlfile, name=name, description='Hi',
+            icon=icon, kmlname=kmlname, kmldescription="hi")
+
+  load('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/LandUseClassifications/classification_sample.RData')
+
+  sample$class = rep(NA,dim(sample)[1])
+  for (i in 1:length(classes)){
+    sample$class[classes[[i]]]=names(classes)[i]
+  }
+  sample = na.omit(sample)
+  sample$class = as.factor(sample$class)
+  sapply(sample, class)
+
+
+
 
 
 
   
 # Visualize examples of smoothed data -------------------------------------
-  setwd('/groups/manngroup/India_Index/Data/India')
+  setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/Data Stacks/WO Clouds Clean/')
   
-  load( paste('.//EVI_stack_','h24v05','_wo_clouds_crops.Rdata',sep='') )
+  load( paste('.//EVI_stack_','h21v07','_wo_clouds_clean.RData',sep='') )
   
-  plot_dates = strptime( gsub("^.*X([0-9]+).*$", "\\1", names(EVI_stack_h24v05)),format='%Y%j') # create dates to interpolate to
+  plot_dates = strptime( gsub("^.*X([0-9]+).*$", "\\1", names(EVI_stack_h21v07_wo_clouds_clean)),format='%Y%j') # create dates to interpolate to
   pred_dates =  strptime(dates,'%Y-%m-%d') 
   
   
-  EVI_v1 = getValues(NDVI_stack_h24v05, 1000, 1)
-  EVI_v1[EVI_v1<=-2000]=NA
-  EVI_v1=EVI_v1*0.0001
+  EVI_v1 = getValues(EVI_stack_h21v07_wo_clouds_clean, 4000, 1)
   dim(EVI_v1)
   
   row = 900  #500 100 is good
@@ -444,11 +468,11 @@ registerDoParallel(32)
                         dates =as.Date(strptime(plot_dates,'%Y-%m-%d')),class = 'EVI Smoothed'))
 
   # Get planting and harvest dates 
-  PlantHarvestDates(dates[1],dates[2],PlantingMonth=10,PlantingDay=23,HarvestMonth=3,HarvestDay=10)
+  plantharvest =   PlantHarvestDates(dates[1],dates[2],PlantingMonth=10,PlantingDay=23,HarvestMonth=3,HarvestDay=10)
 
   # plot out time series with planting and harvest dates
-  rects = data.frame(xstart = as.Date(planting), 
-    xend = as.Date(harvest))
+  rects = data.frame(xstart = as.Date(plantharvest$planting), 
+    xend = as.Date(plantharvest$harvest))
   
   ggplot()+geom_rect(data = rects, aes(xmin = xstart, xmax = xend,
         ymin = -Inf, ymax = Inf), alpha = 0.4)+
@@ -456,16 +480,6 @@ registerDoParallel(32)
    
 
     
-# plot out 5% of non-linear distribution --------------------------------------
-  windows()
-   q = quantile(plotdata$EVI,na.rm=T, probs = seq(0.05, .1, 0.25))
-   a=ggplot(plotdata, aes(EVI)) + geom_histogram(colour='blue',fill='blue',alpha=.3)+ 
-         geom_vline(xintercept = q,size=2)+labs(title = "Distribution")
-  
-   b=ggplot(plotdata, aes(EVI)) + stat_ecdf(geom = "step",colour='blue',size=1.5)+
-     geom_vline(xintercept = q,size=2)+geom_hline(yintercept = 0.05,size=2)+
-     labs(title = "Cumulative Distribution")
-   multiplot(a,b, cols=2)
   
   
   
