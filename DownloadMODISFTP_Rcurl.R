@@ -12,9 +12,10 @@ R
 
 rm(list=ls())
 #source('R:\\Mann Research\\IFPRI_Ethiopia_Drought_2016\\IFPRI_Ethiopia_Drought_Code\\ModisDownload.R')
-#source('G:\\Faculty\\Mann/scripts/SplineAndOutlierRemoval.R')
 source('/groups/manngroup/scripts/SplineAndOutlierRemoval.R')
-source('/groups/manngroup/India_Index/India-Index-Insurance-Code/RasterChuckProcessing.R')
+source('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/IFPRI_Ethiopia_Drought_2016/SummaryFunctions.R')
+
+
 
 library(RCurl)
 library(raster)
@@ -43,25 +44,6 @@ registerDoParallel(32)
            y[!y%in%x]))
   }
 
-  PlantHarvestDates = function(start_date,end_date,PlantingMonth,PlantingDay,HarvestMonth,HarvestDay){
-    # this function takes in date range and returns planting and harvest date for time series
-    # set planting
-    start_end_years = c(strptime(start_date,'%Y-%m-%d'),strptime(end_date,'%Y-%m-%d'))
-    names(unclass(start_end_years[1]))
-    start_end_years[1]$mon=PlantingMonth-1
-    start_end_years[1]$mday=PlantingDay
-    planting = seq(start_end_years[1],
-      length=strptime(dates[2],'%Y-%m-%d')$year-strptime(dates[1],'%Y-%m-%d')$year,
-      by='year')
-    # set harvest
-    start_end_years[2]$year=start_end_years[1]$year+1    # set year equal to start year +1
-    start_end_years[2]$mon=HarvestMonth-1
-    start_end_years[2]$mday=HarvestDay
-    harvest = seq(start_end_years[2],
-      length=strptime(end_date,'%Y-%m-%d')$year-strptime(start_date,'%Y-%m-%d')$year,
-      by='year')
-    return(data.frame(planting=planting,harvest=harvest))
-  }
 
 # Set up parameters -------------------------------------------------------
 
@@ -292,44 +274,6 @@ registerDoParallel(32)
   }} 
   
 
-# Remove non-agricultural lands ---------------------------------------------
-# use MCD12Q1 landcover classification 2 (less exclusion of built up areas) 
-#
-#  setwd('/groups/manngroup/India_Index/Data/Data Stacks')
-#
-#  # load data stacks from both directories
-#  dir1 = list.files('./WO Clouds/','.RData',full.names=T)
-#  lapply(dir1, load,.GlobalEnv)
-#  dir2 = list.files('./LC Stacks/','.RData',full.names=T)
-#  lapply(dir2, load,.GlobalEnv)
-#
-#
-#  LandCover_product = 'MCD12Q1'
-#  products2removeLC = c('blue_reflectance', 'MIR_reflectance',
-#        'NIR_reflectance','red_reflectance','EVI','NDVI','pixel_reliability')
-#  tiles = c( 'h24v05','h24v06')
-#  for(product in products2removeLC){
-#  for( tile in tiles){
-#        print(paste('Working on',product,tile))
-#        # load land cover data
-#        LC_stackvalues = get(paste(LandCover_product,'_stack_',tile,sep=''))
-#	LC_dates = format(strptime( gsub("^.*X([0-9]+).*$", "\\1", names(LC_stackvalues)),format='%Y%j'),'%Y')
-#        # load product data 
-#        data_stackvalues = get(paste(product,'_stack_',tile,sep=''))
-#        data_dates = format(strptime( gsub("^.*X([0-9]+).*$", "\\1", names(data_stackvalues)),format='%Y%j'),'%Y')
-#
-#        foreach(i=1:dim(data_stackvalues)[3]) %dopar% {
-#		# get the land cover data for the current product layer
-#		LC_value = subset(LC_stackvalues, seq(1,length(LC_dates))[LC_dates == data_dates[i]]) 
-#		# restrict to area with crops (code = 12) 
-#                data_stackvalues[[i]][LC_value!=12]=NA}
-#        # save data 
-#	assign(paste(product,'_stack_',tile,sep=''),data_stackvalues)
-#        save(list=paste(product,'_stack_',tile,sep=''),
-#                file = paste('./WO Clouds Crops/',product,'_stack_',tile,'_wo_clouds_crops.RData',sep=''))
-#  }}
-
-
 
 # Rescale and set valid ranges of data  ---------------------------------------------
   setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data//Data Stacks')
@@ -399,52 +343,102 @@ registerDoParallel(32)
   }}
 
 
-# Limit to crop signal ----------------------------------------------------
 
+
+
+
+
+# Limit to crop signal ----------------------------------------------------
+  setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/Data Stacks/WO Clouds Clean/')
+
+  # load data stacks from both directories
+  dir1 = list.files('.','.RData',full.names=T)
+  lapply(dir1, load,.GlobalEnv)
+
+  setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/LandUseClassifications/')
+  
+  #### get original training dataset from previous study #### 
   ET = readOGR('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/AdminBoundaries/','ETH_adm0')
   ET = spTransform(ET, CRS(projection(EVI_stack_h21v07_wo_clouds_clean)))
-  set.seed(12)
-  point_sample = SpatialPointsDataFrame(spsample(ET, n = 200, "random"),data=data.frame(class=rep(NA,200)))  # create random point sample
 
-  classes=list(dryag=c(2,82,123,129,153,162,198),
-  	wetag=c(7,11,15,16,18,27,41,47,53,54,77,85,90,91,100,102,105,106,117,119,122,125,133,150,151,152,166,173,178,182,195),
-  	agforest=c(6,8,21,32,61,95,111,128,131,137,143,145,168,169,186,191,193),
+  classes=list(dryag=c(2,15,82,123,129,153,162,198),
+  	wetag=c(7,11,16,18,27,41,47,53,54,77,85,90,91,100,102,105,106,117,119,122,125,133,150,151,152,166,173,178,182,195),
+  	agforest=c(6,8,9,21,32,61,95,111,128,131,137,143,145,168,169,186,191,193),
   	arid = c(13,29,56,69,71,78,96,149,156),
-  	semiarid=c(5,14,19,23,24,26,29,30,35,36,37,40,43,44,45,50,57,59,60,63, 64,73,75,76,80,92,103,107,108,114,135,136,141,
+  	semiarid=c(5,14,19,23,24,26,30,35,36,37,40,43,44,45,50,57,59,60,63, 64,73,75,76,80,92,103,107,108,114,135,136,141,
 	146,158,167,170,179,197,200),
   	shrub=c(1,12,17,22,25,39,46,48,49,52,55,62,66,67,72,87,88,89,93,97,104,109,110,113,116,118,132,138,142,144,147,148,154,
 	159,160,164,175,185,187,188,189,190,192),
-  	forest=c(3,4,9,10,28,31,38,42,51,58,68,74,79,81,84,86,94,98,99,101,115,120,121,124,126,127,130,139,140,157,161,163,165,
+  	forest=c(3,4,10,28,31,38,42,51,58,68,74,79,81,84,86,94,98,99,101,115,120,121,124,126,127,130,139,140,157,161,163,165,
 	171,174,176,180,181,183,184,194,196),
   	wetforest=c(20,33,34,65,70,83,112,134,155,199),
   	water=c(172,177))
 
+  points = unlist(getKMLcoordinates('./LUTrainingPoints_1stStudy.kml')) # get coordinates from original training data
+  dim(points) = c(3,200)
+  points = t(points)
+  points = data.frame(points)
+  names(points)=c('lon','lat','z')
+  points$class = NA
   for (i in 1:length(classes)){
-    point_sample$class[classes[[i]]]=names(classes)[i]
+    points$class[classes[[i]]]=names(classes)[i]
+  }
+  coordinates(points) = ~ lon + lat
+  proj4string(points) = "+proj=longlat +ellps=WGS84 +datum=WGS84"
+  points = spTransform(points, CRS(projection(EVI_stack_h21v07_wo_clouds_clean)))
+
+  #  writeOGR(points, dsn=".", layer="LUTrainingPoints", driver="ESRI Shapefile") 
+
+  plot(EVI_stack_h21v07_wo_clouds_clean[[1]])
+  plot(points,add=T)
+
+
+  #### Train classifier ####
+
+  # extract time series (MUST BE DONE ON SHORT OR LARGER MEMORY NODE, DOESN"T WORK ON DEFQ OR DEBUG)
+  NDVI = extract_value_point_polygon(points,list(NDVI_stack_h21v07_wo_clouds_clean,NDVI_stack_h21v08_wo_clouds_clean,
+	NDVI_stack_h22v07_wo_clouds_clean,NDVI_stack_h22v08_wo_clouds_clean),5)
+  #save(NDVI, file = paste('./NDVI_200p_LUClasses.RData',sep='') )
+  load('./NDVI_200p_LUClasses.RData')
+
+  library(data.table)
+  library(randomForest)
+  library(e1071)
+
+  NDVI = rbindlist(NDVI)
+  NDVI_dates = gsub("^.*X([0-9]{7}).*$", "\\1",names(NDVI),perl = T)  # Strip dates
+  NDVI = as.data.frame.matrix(NDVI)
+
+  NDVI_smooth = NDVI
+  # smooth evi sample 
+  for(i in 1:dim(NDVI)[1]){
+    NDVI_smooth[i,] = SplineAndOutlierRemoval(x = NDVI[i,], dates=NDVI_dates, pred_dates=NDVI_dates,spline_spar = 0.4)
   }
 
-  kmlfile = paste('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/LandUseClassifications', "LU_Training_200N.kml", sep="/")
-  kmlname <- "Land Use Class Training Data"
-  icon <- "http://maps.google.com/mapfiles/kml/pal4/icon57.png"
-  name <- row.names(point_sample)
-  
-  kmlPoints(spTransform(point_sample,CRS("+proj=longlat")), kmlfile=kmlfile, name=name, description='Hi',
-            icon=icon, kmlname=kmlname, kmldescription="hi")
+  NDVI_smooth$Class = as.factor(points$class)
+  #NDVI[,ID := 1:dim(NDVI)[1]]
+  formula1 = Class ~ .
 
-  load('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/LandUseClassifications/classification_sample.RData')
+  set.seed(10)
+  rf <- randomForest(formula1, data=na.omit(NDVI_smooth), ntree=2000, proximity=T)
+  table(predict(rf), NDVI_smooth$Class)
+  print(rf)
+  plot(rf)
+  varImpPlot(rf)
 
-  sample$class = rep(NA,dim(sample)[1])
-  for (i in 1:length(classes)){
-    sample$class[classes[[i]]]=names(classes)[i]
-  }
-  sample = na.omit(sample)
-  sample$class = as.factor(sample$class)
-  sapply(sample, class)
+  source( '/groups/manngroup/IFPRI_Ethiopia_Dought_2016/IFPRI_Ethiopia_Drought_2016/mctune.R')
+  rf_ranges = list(ntree=c(seq(1,1000,100),seq(1000,8000,500)),mtry=seq(5,15,2))
+  set.seed(10)
+  tuned.rf = mctune(method = randomForest, train.x = formula1, data = na.omit(NDVI_smooth),
+         tunecontrol = tune.control(sampling = "cross",cross = 5), ranges=rf_ranges,
+         mc.control=list(mc.cores=16, mc.preschedule=T),confusionmatrizes=T )
+  save(tuned.rf, file = paste('./NDVI_tuned_rf.RData',sep='') )
 
+  tuned.rf$best.model
+  plot(tuned.rf)
 
-
-
-
+  lc =  predict(NDVI_stack_h21v07_wo_clouds_clean,rf)
+  plot(lc)
 
   
 # Visualize examples of smoothed data -------------------------------------
