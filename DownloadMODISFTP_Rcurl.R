@@ -3,6 +3,10 @@
 # This script uses RCurl and ModisDownload to access an ftp server and download desired modis tiles
 
 # Run the following in bash before starting R
+if [ -e $HOME/.Renviron ]; then cp $HOME/.Renviron $HOME/.Renviron.bkp; fi
+if [ ! -d $HOME/.Rtmp ] ; then mkdir $HOME/.Rtmp; fi
+echo "TMP='$HOME/.Rtmp'" > $HOME/.Renviron
+
 module load proj.4/4.8.0
 module load gdal/gcc/1.11 
 module load R
@@ -12,7 +16,6 @@ R
 
 rm(list=ls())
 #source('R:\\Mann Research\\IFPRI_Ethiopia_Drought_2016\\IFPRI_Ethiopia_Drought_Code\\ModisDownload.R')
-source('/groups/manngroup/scripts/SplineAndOutlierRemoval.R')
 source('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/IFPRI_Ethiopia_Drought_2016/SummaryFunctions.R')
 
 
@@ -456,11 +459,11 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
   writeRaster(lc,'/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/LandUseClassifications/h21v07_lc.tif')
 
 
- stack_mcsummary_function <- function(stack_in,FUN,workers){
+ stack_out_raster__mc_function <- function(stack_in,fun_in,workers){
     require(foreach,doParallel,raster,rgdal)
 
     #Determine optimal block size for loading in MODIS stack data
-    block_width = 10
+    block_width = 100
     nrows = dim(stack_in)[1]
     nblocks <- nrows%/%block_width
     bs_rows <- seq(1,nblocks*block_width+1,block_width)
@@ -474,24 +477,94 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
     result <- foreach(i = 1:length(bs_rows), .combine = rbind,.inorder=T) %dopar% {
       print(paste("Working on block",i))
       stack_values = getValues(stack_in, bs_rows[i], bs_nrows[i])
-      return(stack_values)
+      return( as.data.frame(unlist(lapply(stack_values,FUN=fun_in ))))
+ out=      with(stack_values,fun_in)
+
      }
 
-  print('stacking output')
-  nrows = dim(stack_in)[1]
-  ncols = dim(stack_in)[2]
-  zs = dim(stack_in)[3]
-  dim(result) = c(nrows,ncols,zs)
-  stack_in[] = result
-  stopImplicitCluster()
-  return(stack_in)
+   out_raster = stack_in[[1]]
+   out_raster = setValues(out_raster,result[,1])
+   print('stacking output')
+   nrows = dim(stack_in)[1]
+   ncols = dim(stack_in)[2]
+   dim(result) = c(nrows,ncols)
+   a_raster = stack_in[[1]]
+   a_raster[] = result
+   stopImplicitCluster()
+   return(stack_in)
   }
-a = NDVI_stack_h21v07_wo_clouds_clean[[1:3]]
-#b = stack_mcsummary_function(a,FUN= function(x) mean(x,na.omit=T),15)
+a = NDVI_stack_h21v07_wo_clouds_clean[[1:20]]
 i = 1 
 stack_in = a
-FUN = function(x) mean(x,na.omit=T)
 workers = 20
+fun_in= function(x) mean(x,na.rm=F)
+b = stack_mcsummary_function(a,fun_in= function(x) mean(x,na.rm=F),20)
+
+
+
+f4 <- function(x, filename,workers) {
+    out <- x
+    out[]=NA
+    bs <- blockSize(out)
+    out <- writeStart(out, filename, overwrite=TRUE)
+    require(foreach,doParallel,raster,rgdal)
+    #Register the parallel backend
+    registerDoParallel(workers)
+
+    v_list = foreach(i =  1:bs$n, .inorder=T) %dopar% {
+ 	v <- getValues(x, row=bs$row[i], nrows=bs$nrows[i] )
+ 	v <- v *100
+	return(v)
+    }
+    for (i in 1:length(v_list)){
+       out <- writeValues(out, v_list[[i]], bs$row[i])
+    }
+
+    out <- writeStop(out)
+    return(out)
+ }
+ s <- f4(a, filename='test3.tif',workers=20)
+
+
+
+stack_in = NDVI_stack_h21v07_wo_clouds_clean
+dates =   as.numeric(gsub("^.*X([0-9]{7}).*$", "\\1",names(stack_in),perl = T))  # Strip dates
+pred_dates = dates
+spline_spar=0.4  # 0.4 for RF
+
+stack_smoother <- function(stack_in,dates,pred_dates,spline_spar=0.1,workers=20){
+    #Takes stack and returns smoothed stack using SplineAndOutlierRemovalNA tool
+    # as spline_spar increases smoothing decreases
+    #Determine optimal block size for loading in MODIS stack data
+    block_width = 5  # must be 1?
+    nrows = dim(stack_in)[1]
+    nblocks <- nrows%/%block_width
+    bs_rows <- seq(1,nblocks*block_width+1,block_width)
+    bs_nrows <- rbind(matrix(block_width,length(bs_rows)-1,1),nrows-bs_rows[length(bs_rows)]+1)
+    print('Working on the following rows')
+    print(paste(bs_rows))
+    registerDoParallel(workers)
+
+
+    result <- foreach(i = 1:length(bs_rows), .combine = rbind) %dopar% {
+    	stack_values = getValues(stack_in, bs_rows[i], bs_nrows[i])
+    	smooth_holderl = lapply( 1:dim(stack_values)[1], 
+        function(j){ SplineAndOutlierRemovalNA(x = stack_values[j,], dates=dates, pred_dates=pred_dates,spline_spar = spline_spar)} )
+        print(paste("Saving pheno_matrix for row",i))
+	smooth_holder = do.call('rbind',smooth_holderl)
+	save(smooth_holder,file = 
+        paste("/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/Data Stacks/Smoothed/Temp/smooth_holderl_temp_big",bs_rows[i],
+		".RData",sep = ""))
+	return(smooth_holder)
+    }
+    stopImplicitCluster()
+    print('rbinding results')
+    return(result)
+}
+
+
+results = stack_smoother(stack_in,dates=dates,pred_dates=pred_dates,workers=20,spline_spar=0.4)
+
 
   
 # Visualize examples of smoothed data -------------------------------------
