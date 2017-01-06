@@ -27,6 +27,7 @@ library(maptools)
 library(gdalUtils)
 library(foreach)
 library(doParallel)
+library(compiler)
 library(ggplot2)
 registerDoParallel(32)
 
@@ -43,6 +44,10 @@ registerDoParallel(32)
     sort(c(x[!x%in%y],
            y[!y%in%x]))
   }
+
+functions_in = lsf.str()
+lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # byte code compile all functions http://adv-r.had.co.nz/Profil$
+
 
 
 # Set up parameters -------------------------------------------------------
@@ -396,7 +401,7 @@ registerDoParallel(32)
   #### Train classifier ####
 
   # extract time series (MUST BE DONE ON SHORT OR LARGER MEMORY NODE, DOESN"T WORK ON DEFQ OR DEBUG)
-  NDVI = extract_value_point_polygon(points,list(NDVI_stack_h21v07_wo_clouds_clean,NDVI_stack_h21v08_wo_clouds_clean,
+  #NDVI = extract_value_point_polygon(points,list(NDVI_stack_h21v07_wo_clouds_clean,NDVI_stack_h21v08_wo_clouds_clean,
 	NDVI_stack_h22v07_wo_clouds_clean,NDVI_stack_h22v08_wo_clouds_clean),5)
   #save(NDVI, file = paste('./NDVI_200p_LUClasses.RData',sep='') )
   load('./NDVI_200p_LUClasses.RData')
@@ -433,12 +438,60 @@ registerDoParallel(32)
          tunecontrol = tune.control(sampling = "cross",cross = 5), ranges=rf_ranges,
          mc.control=list(mc.cores=16, mc.preschedule=T),confusionmatrizes=T )
   save(tuned.rf, file = paste('./NDVI_tuned_rf.RData',sep='') )
+  load('./NDVI_tuned_rf.RData')
 
   tuned.rf$best.model
   plot(tuned.rf)
 
-  lc =  predict(NDVI_stack_h21v07_wo_clouds_clean,rf)
+  svm_model1 <- svm(formula1,na.omit(NDVI_smooth))
+  table(predict(svm_model1), NDVI_smooth$Class)
+
+  beginCluster(15, type='SOCK')
+  lc <- clusterR(NDVI_stack_h21v07_wo_clouds_clean, predict, args=list(model = tuned.rf$best.model))
+
+
+  lc =  predict(NDVI_stack_h21v07_wo_clouds_clean,tuned.rf$best.model)
   plot(lc)
+
+  writeRaster(lc,'/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/LandUseClassifications/h21v07_lc.tif')
+
+
+ stack_mcsummary_function <- function(stack_in,FUN,workers){
+    require(foreach,doParallel,raster,rgdal)
+
+    #Determine optimal block size for loading in MODIS stack data
+    block_width = 10
+    nrows = dim(stack_in)[1]
+    nblocks <- nrows%/%block_width
+    bs_rows <- seq(1,nblocks*block_width+1,block_width)
+    bs_nrows <- rbind(matrix(block_width,length(bs_rows)-1,1),nrows-bs_rows[length(bs_rows)]+1)
+    #print('Working on the following rows')
+    #print(paste(bs_rows))
+
+    #Register the parallel backend
+    registerDoParallel(workers)
+
+    result <- foreach(i = 1:length(bs_rows), .combine = rbind,.inorder=T) %dopar% {
+      print(paste("Working on block",i))
+      stack_values = getValues(stack_in, bs_rows[i], bs_nrows[i])
+      return(stack_values)
+     }
+
+  print('stacking output')
+  nrows = dim(stack_in)[1]
+  ncols = dim(stack_in)[2]
+  zs = dim(stack_in)[3]
+  dim(result) = c(nrows,ncols,zs)
+  stack_in[] = result
+  stopImplicitCluster()
+  return(stack_in)
+  }
+a = NDVI_stack_h21v07_wo_clouds_clean[[1:3]]
+#b = stack_mcsummary_function(a,FUN= function(x) mean(x,na.omit=T),15)
+i = 1 
+stack_in = a
+FUN = function(x) mean(x,na.omit=T)
+workers = 20
 
   
 # Visualize examples of smoothed data -------------------------------------
