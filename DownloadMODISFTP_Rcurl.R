@@ -32,7 +32,9 @@ library(foreach)
 library(doParallel)
 library(compiler)
 library(ggplot2)
-registerDoParallel(32)
+
+cl <- makeCluster(32)
+registerDoParallel(cl)
 
 
 # Functions ---------------------------------------------------------------
@@ -352,12 +354,61 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
 
 
 
+# stack smoother -----------------------------------------------------
+
+
+setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/Data Stacks/Smoothed/')
+
+  for( i in ls(pattern = "NDVI_stack*")){
+        print('##############################################################')
+	dir.create(file.path(getwd(), i), showWarnings = FALSE)
+        print(paste('Starting processing of:',i))
+        stack_in = get(i)
+        stack_name = i
+        dates =   as.numeric(gsub("^.*X([0-9]{7}).*$", "\\1",names(stack_in),perl = T))  # Strip dates
+        pred_dates = dates
+        spline_spar=0.4  # 0.4 for RF
+	workers = 20
+        stack_smoother(stack_in,dates,pred_dates,spline_spar,workers,stack_name)
+  }
+
+
+
+
+
+# Restack Smoothed Files  ----------------------------------------------------
+
+ setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/Data Stacks/Smoothed/Tifs/')  # folder where  EVI .tifs are
+  # create data stack for each variable and tile
+
+  foreach(product =  c('NDVI')) %do% {
+    for( tile_2_process in  tiles){
+         print(paste('processing',product,tile_2_process,sep=' '))
+         # Set up data
+         flist = list.files(".",glob2rx(paste(product,'_',tile_2_process,'*','.tif$',sep='')),
+                 full.names = TRUE)
+         flist_dates = gsub("^.*_X([0-9]{7}).*$", "\\1",flist,perl = T)  # Strip dates
+         flist = flist[order(flist_dates)]  # file list in order
+         flist_dates = flist_dates[order(flist_dates)]  # file_dates list in order
+
+         # stack data and save
+         stacked = stack(flist)
+         names(stacked) = flist_dates
+         assign(paste(product,'stack',tile_2_process,'wo_clouds_clean_smooth',sep='_'),stacked)
+         save( list=paste(product,'stack',tile_2_process,'wo_clouds_clean_smooth',sep='_') ,
+              file = paste('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/Data Stacks/Smoothed/',
+	      product,'_stack_',tile_2_process,'_wo_clouds_clean_smooth','.RData',sep='') )
+  }}
+
 
 
 
 
 # Limit to crop signal ----------------------------------------------------
-  setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/Data Stacks/WO Clouds Clean/')
+
+  rm(list=ls()[grep('stack',ls())]) # running into memory issues clear stacks load one by one
+
+  setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/Data Stacks/WO Clouds Clean/') # don't load smoothed... 
 
   # load data stacks from both directories
   dir1 = list.files('.','.RData',full.names=T)
@@ -393,38 +444,40 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
   }
   coordinates(points) = ~ lon + lat
   proj4string(points) = "+proj=longlat +ellps=WGS84 +datum=WGS84"
-  points = spTransform(points, CRS(projection(EVI_stack_h21v07_wo_clouds_clean)))
+  points = spTransform(points, CRS(projection(NDVI_stack_h21v07_wo_clouds_clean_smooth)))
 
   #  writeOGR(points, dsn=".", layer="LUTrainingPoints", driver="ESRI Shapefile") 
 
-  plot(EVI_stack_h21v07_wo_clouds_clean[[1]])
+  plot(NDVI_stack_h21v07_wo_clouds_clean_smooth[[1]])
   plot(points,add=T)
 
 
   #### Train classifier ####
-
-  # extract time series (MUST BE DONE ON SHORT OR LARGER MEMORY NODE, DOESN"T WORK ON DEFQ OR DEBUG)
-  #NDVI = extract_value_point_polygon(points,list(NDVI_stack_h21v07_wo_clouds_clean,NDVI_stack_h21v08_wo_clouds_clean,
-	NDVI_stack_h22v07_wo_clouds_clean,NDVI_stack_h22v08_wo_clouds_clean),5)
-  #save(NDVI, file = paste('./NDVI_200p_LUClasses.RData',sep='') )
-  load('./NDVI_200p_LUClasses.RData')
-
-  library(data.table)
   library(randomForest)
   library(e1071)
+  library(data.table)
 
-  NDVI = rbindlist(NDVI)
+  # extract time series (MUST BE DONE ON SHORT OR LARGER MEMORY NODE, DOESN"T WORK ON DEFQ OR DEBUG)
+  
+  NDVI = extract_value_point_polygon(points,list(NDVI_stack_h21v07_wo_clouds_clean,
+	NDVI_stack_h21v08_wo_clouds_clean,NDVI_stack_h22v07_wo_clouds_clean,
+	NDVI_stack_h22v08_wo_clouds_clean),25)
+  save(NDVI, file = paste('./NDVI_200p_LUClasses.RData',sep='') )
+  load('./NDVI_200p_LUClasses.RData')
+
+  NDVI = rbindlist(NDVI, fill=T) # convert list to table
   NDVI_dates = gsub("^.*X([0-9]{7}).*$", "\\1",names(NDVI),perl = T)  # Strip dates
   NDVI = as.data.frame.matrix(NDVI)
 
   NDVI_smooth = NDVI
-  # smooth evi sample 
+  # smooth evi sample to avoid problems with NAs
   for(i in 1:dim(NDVI)[1]){
-    NDVI_smooth[i,] = SplineAndOutlierRemoval(x = NDVI[i,], dates=NDVI_dates, pred_dates=NDVI_dates,spline_spar = 0.4)
+    NDVI_smooth[i,] = SplineAndOutlierRemovalNA(x = NDVI[i,], dates=NDVI_dates, pred_dates=NDVI_dates,spline_spar = 0.4)
   }
 
-  NDVI_smooth$Class = as.factor(points$class)
-  #NDVI[,ID := 1:dim(NDVI)[1]]
+  # add class data
+  NDVI_smooth$Class = as.factor(points$class) # add classification
+
   formula1 = Class ~ .
 
   set.seed(10)
@@ -459,6 +512,104 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
   writeRaster(lc,'/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/LandUseClassifications/h21v07_lc.tif')
 
 
+
+  
+# Extract polygon or points data from stacks ------------------------
+
+  # get polygon data 
+  #ogrInfo('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/EnumerationAreas/','EnumerationAreasUTM')
+  #Polys = readOGR('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/EnumerationAreas/','EnumerationAreasUTM')
+  #Polys = spTransform(Polys, CRS("+proj=sinu +lon_0=0 +x_0=0 +y_0=0 +a=6371007.181 +b=6371007.181 +units=m +no_defs"))
+  #writeOGR(Polys, dsn="/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/EnumerationAreas/", 
+  #     layer="EnumerationAreasSIN", driver="ESRI Shapefile") # this is in geographical projection
+  Polys = readOGR('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/EnumerationAreas/','EnumerationAreasSIN')
+  Polys$id = 1:dim(Polys@data)[1]
+
+
+
+  # extract values croped to point or polygon
+
+  out2 = extract_value_point_polygon(Polys[1:200,],list(NDVI_stack_h22v08_wo_clouds_clean,NDVI_stack_h22v07_wo_clouds_clean,
+		NDVI_stack_h21v08_wo_clouds_clean,NDVI_stack_h21v07_wo_clouds_clean),16)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Visualize examples of smoothed data -------------------------------------
+
+
+  setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/LandUseClassifications/')
+  load('./NDVI_200p_LUClasses.RData')
+  library(data.table)
+  NDVI = rbindlist(NDVI)
+  NDVI_dates = strptime(gsub("^.*X([0-9]{7}).*$", "\\1",names(NDVI),perl = T),format='%Y%j')  # Strip dates
+
+  NDVI = as.data.frame.matrix(NDVI)
+  NDVI$Class = as.factor(points$class) # add classification
+
+
+  # smooth evi sample to avoid problems with NAs
+  NDVI_smooth = NDVI
+  for(i in 1:dim(NDVI)[1]){
+    NDVI_smooth[i,] = SplineAndOutlierRemovalNA(x = NDVI[i,], dates=NDVI_dates, pred_dates=NDVI_dates,spline_spar = 0.4)
+  }
+  NDVI_smooth$Class = as.factor(points$class) # add classification
+
+
+  # get data ready for plotting
+  plotdata_NDVI = as.data.frame.matrix(reshape(NDVI,dir = 'long', times = format(NDVI_dates,'%Y%j'),varying = list(1:(dim(NDVI)[2]-1))))
+  names(plotdata_NDVI)[3] = 'NDVI'
+  head(plotdata_NDVI)
+  plotdata_NDVI_smooth = reshape(NDVI_smooth,dir = 'long', times = format(NDVI_dates,'%Y%j'),varying = list(1:(dim(NDVI)[2]-1))  )
+  names(plotdata_NDVI_smooth)[3] = 'NDVI'
+  head(plotdata_NDVI_smooth)
+
+
+  plotdata = data.frame(NDVI= plotdata_NDVI$NDVI, ID = plotdata_NDVI$id,Class = plotdata_NDVI$Class,
+                        dates =as.Date(strptime(plotdata_NDVI$time,'%Y%j')),type = 'unsmoothed')
+
+  plotdata = rbind(plotdata, data.frame(NDVI= plotdata_NDVI_smooth$NDVI, ID = plotdata_NDVI_smooth$id,Class = plotdata_NDVI_smooth$Class,
+                        dates =as.Date(strptime(plotdata_NDVI$time,'%Y%j')),type = 'smoothed'))
+  head(plotdata)
+
+  plotdata =  plotdata[plotdata$Class %in% c('wetag'),]   # c('wetag','dryag','agforest')
+
+
+  # Get planting and harvest dates
+  plantharvest =   PlantHarvestDates(dates[1],dates[2],PlantingMonth=4,PlantingDay=1,HarvestMonth=1,HarvestDay=30)
+
+  # plot out time series with planting and harvest dates
+  rects = data.frame(xstart = as.Date(plantharvest$planting),
+    xend = as.Date(plantharvest$harvest))
+
+  ggplot()+geom_rect(data = rects, aes(xmin = xstart, xmax = xend, ymin = -Inf, ymax = Inf), alpha = 0.4)+
+      geom_point(data= plotdata[plotdata$type=='smoothed',], aes(x=dates,y=NDVI,group=ID) )
+      facet_wrap(~Class)
+
+
+
+
+
+
+
+    
+##############################
+# attempt to make stack mc apply function
+
+  
+  
+  
+
  stack_out_raster__mc_function <- function(stack_in,fun_in,workers){
     require(foreach,doParallel,raster,rgdal)
 
@@ -478,7 +629,7 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
       print(paste("Working on block",i))
       stack_values = getValues(stack_in, bs_rows[i], bs_nrows[i])
       return( as.data.frame(unlist(lapply(stack_values,FUN=fun_in ))))
- out=      with(stack_values,fun_in)
+      out=      with(stack_values,fun_in)
 
      }
 
@@ -494,114 +645,10 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
    return(stack_in)
   }
 a = NDVI_stack_h21v07_wo_clouds_clean[[1:20]]
-i = 1 
+i = 1
 stack_in = a
 workers = 20
 fun_in= function(x) mean(x,na.rm=F)
 b = stack_mcsummary_function(a,fun_in= function(x) mean(x,na.rm=F),20)
-
-
-
-f4 <- function(x, filename,workers) {
-    out <- x
-    out[]=NA
-    bs <- blockSize(out)
-    out <- writeStart(out, filename, overwrite=TRUE)
-    require(foreach,doParallel,raster,rgdal)
-    #Register the parallel backend
-    registerDoParallel(workers)
-
-    v_list = foreach(i =  1:bs$n, .inorder=T) %dopar% {
- 	v <- getValues(x, row=bs$row[i], nrows=bs$nrows[i] )
- 	v <- v *100
-	return(v)
-    }
-    for (i in 1:length(v_list)){
-       out <- writeValues(out, v_list[[i]], bs$row[i])
-    }
-
-    out <- writeStop(out)
-    return(out)
- }
- s <- f4(a, filename='test3.tif',workers=20)
-
-
-
-stack_in = NDVI_stack_h21v07_wo_clouds_clean
-dates =   as.numeric(gsub("^.*X([0-9]{7}).*$", "\\1",names(stack_in),perl = T))  # Strip dates
-pred_dates = dates
-spline_spar=0.4  # 0.4 for RF
-
-stack_smoother <- function(stack_in,dates,pred_dates,spline_spar=0.1,workers=20){
-    #Takes stack and returns smoothed stack using SplineAndOutlierRemovalNA tool
-    # as spline_spar increases smoothing decreases
-    #Determine optimal block size for loading in MODIS stack data
-    block_width = 5  # must be 1?
-    nrows = dim(stack_in)[1]
-    nblocks <- nrows%/%block_width
-    bs_rows <- seq(1,nblocks*block_width+1,block_width)
-    bs_nrows <- rbind(matrix(block_width,length(bs_rows)-1,1),nrows-bs_rows[length(bs_rows)]+1)
-    print('Working on the following rows')
-    print(paste(bs_rows))
-    registerDoParallel(workers)
-
-
-    result <- foreach(i = 1:length(bs_rows), .combine = rbind) %dopar% {
-    	stack_values = getValues(stack_in, bs_rows[i], bs_nrows[i])
-    	smooth_holderl = lapply( 1:dim(stack_values)[1], 
-        function(j){ SplineAndOutlierRemovalNA(x = stack_values[j,], dates=dates, pred_dates=pred_dates,spline_spar = spline_spar)} )
-        print(paste("Saving pheno_matrix for row",i))
-	smooth_holder = do.call('rbind',smooth_holderl)
-	save(smooth_holder,file = 
-        paste("/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/Data Stacks/Smoothed/Temp/smooth_holderl_temp_big",bs_rows[i],
-		".RData",sep = ""))
-	return(smooth_holder)
-    }
-    stopImplicitCluster()
-    print('rbinding results')
-    return(result)
-}
-
-
-results = stack_smoother(stack_in,dates=dates,pred_dates=pred_dates,workers=20,spline_spar=0.4)
-
-
-  
-# Visualize examples of smoothed data -------------------------------------
-  setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/Data Stacks/WO Clouds Clean/')
-  
-  load( paste('.//EVI_stack_','h21v07','_wo_clouds_clean.RData',sep='') )
-  
-  plot_dates = strptime( gsub("^.*X([0-9]+).*$", "\\1", names(EVI_stack_h21v07_wo_clouds_clean)),format='%Y%j') # create dates to interpolate to
-  pred_dates =  strptime(dates,'%Y-%m-%d') 
-  
-  
-  EVI_v1 = getValues(EVI_stack_h21v07_wo_clouds_clean, 4000, 1)
-  dim(EVI_v1)
-  
-  row = 900  #500 100 is good
-  plotdata = data.frame(EVI= EVI_v1[row,], 
-                        dates =as.Date(strptime(plot_dates,'%Y-%m-%d')),class = 'EVI')
-  
-  plotdata = rbind(plotdata, data.frame(EVI = SplineAndOutlierRemoval(x = EVI_v1[row,], 
-                        dates=dates, pred_dates=pred_dates,spline_spar = 0.2), 
-                        dates =as.Date(strptime(plot_dates,'%Y-%m-%d')),class = 'EVI Smoothed'))
-
-  # Get planting and harvest dates 
-  plantharvest =   PlantHarvestDates(dates[1],dates[2],PlantingMonth=10,PlantingDay=23,HarvestMonth=3,HarvestDay=10)
-
-  # plot out time series with planting and harvest dates
-  rects = data.frame(xstart = as.Date(plantharvest$planting), 
-    xend = as.Date(plantharvest$harvest))
-  
-  ggplot()+geom_rect(data = rects, aes(xmin = xstart, xmax = xend,
-        ymin = -Inf, ymax = Inf), alpha = 0.4)+
-	geom_point(data= plotdata, aes(x=dates,y=EVI,group=class,colour=class))
-   
-
-    
-  
-  
-  
 
 

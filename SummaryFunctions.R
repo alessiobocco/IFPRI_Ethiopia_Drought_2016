@@ -744,3 +744,71 @@ SplineAndOutlierRemovalNA <- function(x, dates, out_sigma=3, spline_spar=0.3, ou
 }
 
 
+
+
+stack_smoother <- function(stack_in,dates,pred_dates,spline_spar=0.1,workers=20,stack_name){
+    #Takes stack and returns smoothed stack using SplineAndOutlierRemovalNA tool
+    # as spline_spar increases smoothing decreases
+    #Determine optimal block size for loading in MODIS stack data
+    require(data.table)
+
+    print(paste('working on:',stack_name))
+    block_width = 15
+    nrows = dim(stack_in)[1]
+    nblocks <- nrows%/%block_width
+    bs_rows <- seq(1,nblocks*block_width+1,block_width)
+    bs_nrows <- rbind(matrix(block_width,length(bs_rows)-1,1),nrows-bs_rows[length(bs_rows)]+1)
+    print('Working on the following rows')
+    print(paste(bs_rows))
+    registerDoParallel(workers)
+     
+    setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/Data Stacks/Smoothed/')
+    dir.create(file.path(getwd(),stack_name, 'Temp'), showWarnings = FALSE) # create dir to hold temp files
+    do.call(file.remove, list(list.files(file.path(getwd(), 'Temp'),full.names = TRUE))) # delete temp files
+
+    result <- foreach(i = 1:length(bs_rows), .combine = rbind, .inorder=F) %dopar% {
+        stack_values = getValues(stack_in, bs_rows[i], bs_nrows[i])
+        smooth_holderl = lapply( 1:dim(stack_values)[1],
+        function(j){ SplineAndOutlierRemovalNA(x = stack_values[j,], dates=dates,
+                pred_dates=pred_dates,spline_spar = spline_spar)} )
+        print(paste("Saving pheno_matrix for row",i))
+        smooth_holder = do.call('rbind',smooth_holderl)
+        save(smooth_holder,file =
+        	paste('./',stack_name,"/Temp/smooth_holderl_temp_big",bs_rows[i],".RData",sep = ""))
+        return(0)
+    }
+    stopImplicitCluster()
+    print('rbinding results')
+
+   # Load  files
+   setwd(file.path(getwd(),stack_name ,'Temp'))
+   f = list.files(".",'temp_big_*')
+   #put files in ascending order
+   id = as.numeric(gsub("^.*big([0-9]+).*$", "\\1",f,perl = T))  # ID
+   f = f[order(id)]
+   #make list of raster chunks and then rbind them using data.table
+   data_list = lapply(f, function(x){ print(x);  as.data.table(mget(load(x))[[1]])})
+   result_table = rbindlist(data_list,fill=T)
+
+   #do.call(file.remove, list(list.files(".",full.names = TRUE))) # delete temp files
+
+   print('writing out tifs')
+   registerDoParallel(5)
+   dir.create(file.path('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/Data Stacks/Smoothed/', 'Tifs'), 
+	showWarnings = FALSE) 
+   setwd("/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/Data Stacks/Smoothed/Tifs")
+   hnumb =   gsub("^.*h([0-9]{2}).*$", "\\1",stack_name,perl = T)
+   vnumb =   gsub("^.*v([0-9]{2}).*$", "\\1",stack_name,perl = T)
+
+   junk =  foreach( layer = 1:dim(stack_in)[3], .inorder=F) %dopar% {
+      print(layer)
+      r = stack_in[[layer]]
+      r = setValues(r, matrix(result_table[[layer]],nrow=dim(r)[1],byrow=T))
+      writeRaster(r,paste('NDVI_h',hnumb,'v',vnumb,'_',names(stack_in)[layer],'_smooth_',spline_spar,'.tif',sep=''),overwrite=T)
+      return(0)
+   }
+   rm(list=c('result','data_list','result_table'))
+   return('finished')
+}
+
+
