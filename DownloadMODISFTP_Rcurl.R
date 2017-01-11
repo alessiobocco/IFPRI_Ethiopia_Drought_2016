@@ -257,6 +257,74 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
          print(dim(get(paste(product,'_stack_',tile,sep='')))[3])
   }}
 
+
+# stack smoother -----------------------------------------------------
+
+  rm(list=ls()[grep('stack',ls())]) # running into memory issues clear stacks load one by one
+
+  setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/Data Stacks/Raw Stacks/') # don't load smoothed...
+
+  # load data stacks from both directories
+  dir1 = list.files('.','.RData',full.names=T)
+  lapply(dir1, load,.GlobalEnv)
+
+
+  for( i in ls(pattern = "NDVI_stack*")){
+        print('##############################################################')
+        dir.create(file.path(getwd(), i), showWarnings = FALSE)
+        print(paste('Starting processing of:',i))
+        stack_in = get(i)
+        stack_name = i
+        dates =   as.numeric(gsub("^.*X([0-9]{7}).*$", "\\1",names(stack_in),perl = T))  # Strip dates
+        pred_dates = dates
+        spline_spar=0.4  # 0.4 for RF
+        workers = 20
+	out_dir = '/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/Data Stacks/Smoothed/'
+        stack_smoother(stack_in,dates,pred_dates,spline_spar,workers,stack_name,out_dir)
+  }
+
+
+  for( i in ls(pattern = "EVI_stack*")){
+        print('##############################################################')
+        dir.create(file.path(getwd(), i), showWarnings = FALSE)
+        print(paste('Starting processing of:',i))
+        stack_in = get(i)
+        stack_name = i
+        dates =   as.numeric(gsub("^.*X([0-9]{7}).*$", "\\1",names(stack_in),perl = T))  # Strip dates
+        pred_dates = dates
+        spline_spar=0.4  # 0.4 for RF
+        workers = 20
+        out_dir = '/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/Data Stacks/Smoothed/'
+        stack_smoother(stack_in,dates,pred_dates,spline_spar,workers,stack_name,out_dir)
+  }
+
+
+
+# Restack Smoothed Files  ----------------------------------------------------
+
+
+ setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/Data Stacks/Smoothed/Tifs/')  # folder where  EVI .tifs are
+  # create data stack for each variable and tile
+
+  foreach(product = c('EVI','NDVI')) %do% {
+    for( tile_2_process in  tiles){
+         print(paste('processing',product,tile_2_process,sep=' '))
+         # Set up data
+         flist = list.files(".",glob2rx(paste(product,'_',tile_2_process,'*','.tif$',sep='')),
+                 full.names = TRUE)
+         flist_dates = gsub("^.*_X([0-9]{7}).*$", "\\1",flist,perl = T)  # Strip dates
+         flist = flist[order(flist_dates)]  # file list in order
+         flist_dates = flist_dates[order(flist_dates)]  # file_dates list in order
+
+         # stack data and save
+         stacked = stack(flist)
+         names(stacked) = flist_dates
+         assign(paste(product,'stack',tile_2_process,'wo_clouds_clean_smooth',sep='_'),stacked)
+         save( list=paste(product,'stack',tile_2_process,'wo_clouds_clean_smooth',sep='_') ,
+              file = paste('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/Data Stacks/Smoothed/',
+              product,'_stack_',tile_2_process,'_wo_clouds_clean_smooth','.RData',sep='') )
+  }}
+
   
   
 # Remove low quality cells & assign projection ------------------------------------------------
@@ -354,52 +422,6 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
 
 
 
-# stack smoother -----------------------------------------------------
-
-
-setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/Data Stacks/Smoothed/')
-
-  for( i in ls(pattern = "NDVI_stack*")){
-        print('##############################################################')
-	dir.create(file.path(getwd(), i), showWarnings = FALSE)
-        print(paste('Starting processing of:',i))
-        stack_in = get(i)
-        stack_name = i
-        dates =   as.numeric(gsub("^.*X([0-9]{7}).*$", "\\1",names(stack_in),perl = T))  # Strip dates
-        pred_dates = dates
-        spline_spar=0.4  # 0.4 for RF
-	workers = 20
-        stack_smoother(stack_in,dates,pred_dates,spline_spar,workers,stack_name)
-  }
-
-
-
-
-
-# Restack Smoothed Files  ----------------------------------------------------
-
- setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/Data Stacks/Smoothed/Tifs/')  # folder where  EVI .tifs are
-  # create data stack for each variable and tile
-
-  foreach(product =  c('NDVI')) %do% {
-    for( tile_2_process in  tiles){
-         print(paste('processing',product,tile_2_process,sep=' '))
-         # Set up data
-         flist = list.files(".",glob2rx(paste(product,'_',tile_2_process,'*','.tif$',sep='')),
-                 full.names = TRUE)
-         flist_dates = gsub("^.*_X([0-9]{7}).*$", "\\1",flist,perl = T)  # Strip dates
-         flist = flist[order(flist_dates)]  # file list in order
-         flist_dates = flist_dates[order(flist_dates)]  # file_dates list in order
-
-         # stack data and save
-         stacked = stack(flist)
-         names(stacked) = flist_dates
-         assign(paste(product,'stack',tile_2_process,'wo_clouds_clean_smooth',sep='_'),stacked)
-         save( list=paste(product,'stack',tile_2_process,'wo_clouds_clean_smooth',sep='_') ,
-              file = paste('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/Data Stacks/Smoothed/',
-	      product,'_stack_',tile_2_process,'_wo_clouds_clean_smooth','.RData',sep='') )
-  }}
-
 
 
 
@@ -492,18 +514,35 @@ setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/Data Stacks/Smoothed/')
   set.seed(10)
   tuned.rf = mctune(method = randomForest, train.x = formula1, data = na.omit(NDVI_smooth),
          tunecontrol = tune.control(sampling = "cross",cross = 5), ranges=rf_ranges,
-         mc.control=list(mc.cores=16, mc.preschedule=T),confusionmatrizes=T )
+         mc.control=list(mc.cores=20, mc.preschedule=T),confusionmatrizes=T )
   save(tuned.rf, file = paste('./NDVI_tuned_rf.RData',sep='') )
   load('./NDVI_tuned_rf.RData')
 
   tuned.rf$best.model
   plot(tuned.rf)
 
+  # WORKS WELL LEARN HOW TO TUNE
   svm_model1 <- svm(formula1,na.omit(NDVI_smooth))
   table(predict(svm_model1), NDVI_smooth$Class)
 
-  beginCluster(15, type='SOCK')
-  lc <- clusterR(NDVI_stack_h21v07_wo_clouds_clean, predict, args=list(model = tuned.rf$best.model))
+
+  # Predict land class --------------------------------------------------
+
+  rm(list=ls()[grep('stack',ls())]) # running into memory issues clear stacks load one by one
+
+  setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/Data Stacks/Smoothed') # don't load smoothed...
+
+  # load data stacks from both directories
+  dir1 = list.files('.','.RData',full.names=T)
+  lapply(dir1, load,.GlobalEnv)
+
+  setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/LandUseClassifications/')
+
+
+  cl = makeCluster(15)
+  beginCluster(cl)
+  lc = clusterR(NDVI_stack_h21v07_wo_clouds_clean_smooth, predict, args=list(model = svm_model1))
+  endCluster()
 
 
   lc =  predict(NDVI_stack_h21v07_wo_clouds_clean,tuned.rf$best.model)
