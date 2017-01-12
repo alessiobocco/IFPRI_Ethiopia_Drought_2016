@@ -33,29 +33,21 @@ library(doParallel)
 library(compiler)
 library(ggplot2)
 
-cl <- makeCluster(32)
-registerDoParallel(cl)
+#cl <- makeCluster(32)
+#registerDoParallel(cl)
 
 
-# Functions ---------------------------------------------------------------
+# Compile Functions ---------------------------------------------------------------
   
-  
-  multi_grep_character <- function(find, inthis){ #returns location of multiple "find' elements in the vector 'inthis'
-    if(class(inthis)!= "character"){break("Error: in this must be a character vector")}
-    return(unlist(lapply(1:length(find), function(x) {grep(find[x],inthis)}   )))
-  }
-  
-  outersect <- function(x, y) {
-    sort(c(x[!x%in%y],
-           y[!y%in%x]))
-  }
 
 functions_in = lsf.str()
 lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # byte code compile all functions http://adv-r.had.co.nz/Profil$
 
 
 
+
 # Set up parameters -------------------------------------------------------
+
 
   # give path to Modis Reproduction Tool
   MRT = 'G:/Faculty/Mann/Projects/MRT/bin'
@@ -75,8 +67,10 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
   setwd(out_dir)
   
  
+
   
-  # Download MODIS data -----------------------------------------------------
+# Download MODIS data -----------------------------------------------------
+
   
   # find all available dates for each product
   available_date_list = list()
@@ -140,8 +134,11 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
   }
   
   
+
   
 # Find any missing files and download -------------------------------------
+
+
   
   # list all files
   files = data.frame(files=list.files(out_dir,pattern=".hdf", all.files=T, full.names=T),stringsAsFactors = F)
@@ -164,11 +161,13 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
   format(strptime('2010-05-25','%Y-%m-%d'),'%Y%j')
   
 
+
   
 # Get Names of all Layers in HDF ------------------------------------------
 
 
   get_subdatasets('./MYD13Q1.A2015361.h22v08.006.2016012202549.hdf')
+
   
     
 # Reproject ---------------------------------------------------------------
@@ -207,8 +206,10 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
 
   
 
-# Stack relevant data -----------------------------------------------------
+# Stack Raw data -----------------------------------------------------
 
+
+  registerDoParallel(5)
   setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/VegetationIndex/')  # folder where  EVI .tifs are
   # create data stack for each variable and tile 
  
@@ -216,6 +217,7 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
  	 'EVI','NDVI','pixel_reliability')) %dopar% {  
     for( tile_2_process in  tiles){
   	 # Set up data
+         print('stacking')
   	 flist = list.files(".",glob2rx(paste('*',tile_2_process,'.250m_16_days_',product,'.tif$',sep='')), 
  	 	 full.names = TRUE)
   	 flist_dates = gsub("^.*_([0-9]{7})_.*$", "\\1",flist,perl = T)  # Strip dates
@@ -225,6 +227,10 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
   	 # stack data and save
   	 stacked = stack(flist)
   	 names(stacked) = flist_dates
+
+	 # assign projection 
+         crs(stacked) ='+proj=sinu +a=6371007.181 +b=6371007.181 +units=m'
+         # save
   	 assign(paste(product,'stack',tile_2_process,sep='_'),stacked)
 	 dir.create(file.path('../Data Stacks/Raw Stacks/'), showWarnings=F,recursive=T) # create stack directory if doesnt exist
   	 save( list=paste(product,'stack',tile_2_process,sep='_') ,
@@ -235,6 +241,7 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
 
 
 # Limit stacks to common dates -------------------------------------------
+
   setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/')
 
   # load data stacks from both directories
@@ -256,6 +263,10 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
 	 print( all.equal(common_dates,names(get(paste(product,'_stack_',tile,sep=''))))   )
          print(dim(get(paste(product,'_stack_',tile,sep='')))[3])
   }}
+
+
+
+
 
 
 # stack smoother -----------------------------------------------------
@@ -303,10 +314,14 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
 # Restack Smoothed Files  ----------------------------------------------------
 
 
- setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/Data Stacks/Smoothed/Tifs/')  # folder where  EVI .tifs are
+  setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/Data Stacks/Smoothed/Tifs/')  # folder where  EVI .tifs are
   # create data stack for each variable and tile
 
-  foreach(product = c('EVI','NDVI')) %do% {
+  # load data stacks from both directories
+  dir1 = list.files('.','.RData',full.names=T)
+  lapply(dir1, load,.GlobalEnv)
+
+  foreach(product = c('NDVI','EVI')) %do% {
     for( tile_2_process in  tiles){
          print(paste('processing',product,tile_2_process,sep=' '))
          # Set up data
@@ -319,21 +334,33 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
          # stack data and save
          stacked = stack(flist)
          names(stacked) = flist_dates
-         assign(paste(product,'stack',tile_2_process,'wo_clouds_clean_smooth',sep='_'),stacked)
-         save( list=paste(product,'stack',tile_2_process,'wo_clouds_clean_smooth',sep='_') ,
+         assign(paste(product,'stack',tile_2_process,'smooth',sep='_'),stacked)
+         save( list=paste(product,'stack',tile_2_process,'smooth',sep='_') ,
               file = paste('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/Data Stacks/Smoothed/',
-              product,'_stack_',tile_2_process,'_wo_clouds_clean_smooth','.RData',sep='') )
+              product,'_stack_',tile_2_process,'_smooth','.RData',sep='') )
   }}
 
-  
-  
-# Remove low quality cells & assign projection ------------------------------------------------
-  # load data in previous section and run common dates
-  setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data//Data Stacks')
 
+  
+  
+# Remove low quality cells, Land Use, & assign projection FROM RAW, THEN STACK ------------------------------------------------
+
+  
+  # load data in previous section and run common dates
+  rm(list=ls()[grep('stack',ls())]) # running into memory issues clear stacks load one by one
+  setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/Data Stacks/Raw Stacks/') # don't load smoothed...
+  # load data stacks from both directories
+  dir1 = list.files('.','.RData',full.names=T)
+  lapply(dir1, load,.GlobalEnv)
+
+  # set up directories and names
+  setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data//Data Stacks')
   reliability_prefix = 'pixel_reliability'
-  products2removeclouds = c('composite_day_of_the_year','EVI','NDVI')
-  for(product in products2removeclouds){
+  dir.create(file.path('./WO Clouds/Tifs'), showWarnings=F,recursive=T)  
+  registerDoParallel(25)
+
+
+  for(product in  c('EVI','NDVI')){  #'EVI','NDVI'
   for( tile in tiles){
 	print(paste('Working on',product,tile))
 	# load quality flag
@@ -341,14 +368,28 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
 
 	# remove clouds from produt
         data_stackvalues = get(paste(product,'_stack_',tile,sep=''))
-        crs(data_stackvalues) ='+proj=sinu +a=6371007.181 +b=6371007.181 +units=m'
 
-	foreach(i=1:dim(data_stackvalues)[3]) %dopar% { 
-		data_stackvalues[[i]][reliability_stackvalues[[i]]!=0]=NA}
-        assign(paste(product,'_stack_',tile,sep=''),data_stackvalues)
-        dir.create(file.path('../Data Stacks/WO Clouds'), showWarnings=F,recursive=T) # create stack directory i$
-	save(list=paste(product,'_stack_',tile,sep=''),
-		file = paste('WO Clouds/',product,'_stack_',tile,'_wo_clouds.RData',sep=''))
+	foreach(i=1:dim(data_stackvalues)[3], .inorder=F) %dopar% { 
+		print(i)
+		data_stackvalues[[i]][reliability_stackvalues[[i]]!=0]=NA
+		writeRaster(data_stackvalues[[i]],paste('./WO Clouds/Tifs/',product,'_',tile,
+			'_',names(data_stackvalues[[i]]),'.tif',sep=''),overwrite=T)
+		}
+
+	 print(paste('Restacking',product,tile_2_process,sep=' '))
+         # Set up data
+         flist = list.files("./WO Clouds/Tifs/",glob2rx(paste(product,'_',tile,'*','.tif$',sep='')),full.names = T)
+         flist_dates = gsub("^.*_X([0-9]{7}).*$", "\\1",flist,perl = T)  # Strip dates
+         flist = flist[order(flist_dates)]  # file list in order
+         flist_dates = flist_dates[order(flist_dates)]  # file_dates list in order
+
+         # stack data and save
+         stacked = stack(flist)
+         names(stacked) = flist_dates
+         assign(paste(product,'stack',tile,'wo_clouds',sep='_'),stacked)
+         save( list=paste(product,'stack',tile,'wo_clouds',sep='_') ,
+                 file = paste('./WO Clouds/',product,'_stack_',
+                 tile,'_wo_clouds','.RData',sep='') )
   }} 
   
 
@@ -368,15 +409,15 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
   valid = rbind(valid,c('EVI',-3000,-2000,10000,0.0001))
   valid 
 
-  rm(list=ls()[grep('stack',ls())]) # running into memory issues clear stacks load one by one
+#  rm(list=ls()[grep('stack',ls())]) # running into memory issues clear stacks load one by one
 
   # Loop through valid ranges  
   products2clean = unique(valid$stack)
-  for(product in products2clean){
+  for(product in c(products2clean)){
   for( tile in tiles){
         print(paste('Working on',product,tile))	
         # load product data
-        lapply(dir1[grep(product,dir1)],load,.GlobalEnv) 
+        #lapply(dir1[grep(product,dir1)],load,.GlobalEnv) 
         data_stackvalues = get(paste(product,'_stack_',tile,sep=''))
         valid_values = valid[grep(product,valid$stack),]
 
@@ -388,15 +429,19 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
         	x}
         junk = foreach(i=1:dim(data_stackvalues)[3]) %dopar% {
                 clean = ScaleClean(data_stackvalues[[i]])
-		writeRaster(clean, filename=paste('WO Clouds Clean/tifs/',product,'_stack_',tile,'_wo_clouds_clean_',
+		writeRaster(clean, filename=paste('./WO Clouds Clean/tifs/',product,'_stack_',tile,'_wo_clouds_clean_',
                  names(data_stackvalues[[i]]),'.tif',sep=''), overwrite=T)
  	        return(0)
 		} 
 
+
+
   }}
 
 
+
 # Restack clean data -----------------------------------------------------
+
 
   setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/Data Stacks/WO Clouds Clean/tifs/')  # folder where  EVI .tifs are
   # create data stack for each variable and tile
@@ -424,13 +469,11 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
 
 
 
-
-
 # Limit to crop signal ----------------------------------------------------
 
   rm(list=ls()[grep('stack',ls())]) # running into memory issues clear stacks load one by one
 
-  setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/Data Stacks/WO Clouds Clean/') # don't load smoothed... 
+  setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/Data Stacks/Smoothed/') # don't load smoothed... 
 
   # load data stacks from both directories
   dir1 = list.files('.','.RData',full.names=T)
@@ -440,7 +483,7 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
   
   #### get original training dataset from previous study #### 
   ET = readOGR('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/AdminBoundaries/','ETH_adm0')
-  ET = spTransform(ET, CRS(projection(EVI_stack_h21v07_wo_clouds_clean)))
+  ET = spTransform(ET, CRS(projection(NDVI_stack_h21v07_smooth)))
 
   classes=list(dryag=c(2,15,82,123,129,153,162,198),
   	wetag=c(7,11,16,18,27,41,47,53,54,77,85,90,91,100,102,105,106,117,119,122,125,133,150,151,152,166,173,178,182,195),
@@ -466,11 +509,11 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
   }
   coordinates(points) = ~ lon + lat
   proj4string(points) = "+proj=longlat +ellps=WGS84 +datum=WGS84"
-  points = spTransform(points, CRS(projection(NDVI_stack_h21v07_wo_clouds_clean_smooth)))
+  points = spTransform(points, CRS(projection(NDVI_stack_h21v07_smooth)))
 
   #  writeOGR(points, dsn=".", layer="LUTrainingPoints", driver="ESRI Shapefile") 
 
-  plot(NDVI_stack_h21v07_wo_clouds_clean_smooth[[1]])
+  plot(NDVI_stack_h21v07_smooth[[1]])
   plot(points,add=T)
 
 
@@ -479,23 +522,59 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
   library(e1071)
   library(data.table)
 
+  # add other important features  (run seperatately in parallel)
+  #beginCluster(10,type="SOCK")
+  #f2 <- function(x) calc(x, mean)
+  #setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/Data Stacks/Smoothed/')
+  #NDVI_stack_h21v07_smooth_mean=clusterR(NDVI_stack_h21v07_smooth, f2)
+  #writeRaster(NDVI_stack_h21v07_mean,'NDVI_stack_h21v07_smooth_mean.tif')
+  #NDVI_stack_h21v08_smooth_mean=clusterR(NDVI_stack_h21v08_smooth,f2)
+  #writeRaster(NDVI_stack_h21v08_smooth_mean,'NDVI_stack_h21v08_smooth_mean.tif')
+  #NDVI_stack_h22v07_smooth_mean=clusterR(NDVI_stack_h22v07_smooth,f2)
+  #writeRaster(NDVI_stack_h22v07_smooth_mean,'NDVI_stack_h22v07_smooth_mean.tif')
+  #NDVI_stack_h22v08_smooth_mean=clusterR(NDVI_stack_h22v08_smooth,f2)
+  #writeRaster(NDVI_stack_h22v08_smooth_mean,'NDVI_stack_h22v08_smooth_mean.tif')
+  #endCluster()
+  NDVI_stack_h21v07_smooth[[262]]=raster('../Data Stacks/Smoothed/NDVI_stack_h21v07_smooth_mean.tif')
+  names(NDVI_stack_h21v07_smooth[[262]])='mean'
+  NDVI_stack_h21v08_smooth[[262]]=raster('../Data Stacks/Smoothed/NDVI_stack_h21v08_smooth_mean.tif')
+  names(NDVI_stack_h21v08_smooth[[262]])='mean'
+  NDVI_stack_h22v07_smooth[[262]]=raster('../Data Stacks/Smoothed/NDVI_stack_h22v07_smooth_mean.tif')
+  names(NDVI_stack_h22v07_smooth[[262]])='mean'
+  NDVI_stack_h22v08_smooth[[262]]=raster('../Data Stacks/Smoothed/NDVI_stack_h22v08_smooth_mean.tif')
+  names(NDVI_stack_h22v08_smooth[[262]])='mean'
+
+
+  # Add feature of stack number to correct for edge effects
+  NDVI_stack_h21v07_smooth[[263]]=2107
+  names(NDVI_stack_h21v07_smooth[[263]])='tile'
+  NDVI_stack_h21v08_smooth[[263]]=2108
+  names(NDVI_stack_h21v08_smooth[[263]])='tile'
+  NDVI_stack_h22v07_smooth[[263]]=2207
+  names(NDVI_stack_h22v07_smooth[[263]])='tile'
+  NDVI_stack_h22v08_smooth[[263]]=2208
+  names(NDVI_stack_h22v08_smooth[[263]])='tile'
+
+
   # extract time series (MUST BE DONE ON SHORT OR LARGER MEMORY NODE, DOESN"T WORK ON DEFQ OR DEBUG)
+  #NDVI = extract_value_point_polygon(points,list(NDVI_stack_h21v07_smooth,
+  #	NDVI_stack_h21v08_smooth,NDVI_stack_h22v07_smooth,
+  #	NDVI_stack_h22v08_smooth),30)
   
-  NDVI = extract_value_point_polygon(points,list(NDVI_stack_h21v07_wo_clouds_clean,
-	NDVI_stack_h21v08_wo_clouds_clean,NDVI_stack_h22v07_wo_clouds_clean,
-	NDVI_stack_h22v08_wo_clouds_clean),25)
-  save(NDVI, file = paste('./NDVI_200p_LUClasses.RData',sep='') )
+  #save(NDVI, file = paste('./NDVI_200p_LUClasses.RData',sep='') )
   load('./NDVI_200p_LUClasses.RData')
 
+  # create a dataframe from list
   NDVI = rbindlist(NDVI, fill=T) # convert list to table
   NDVI_dates = gsub("^.*X([0-9]{7}).*$", "\\1",names(NDVI),perl = T)  # Strip dates
   NDVI = as.data.frame.matrix(NDVI)
+  NDVI_smooth = as.matrix(NDVI)
+  
+  # fill NAs (water) with row means
+  k <- which(is.na(NDVI_smooth), arr.ind=TRUE)
+  NDVI_smooth[k] <- rowMeans(NDVI_smooth, na.rm=TRUE)[k[,1]]
+  NDVI_smooth = as.data.frame(NDVI_smooth)
 
-  NDVI_smooth = NDVI
-  # smooth evi sample to avoid problems with NAs
-  for(i in 1:dim(NDVI)[1]){
-    NDVI_smooth[i,] = SplineAndOutlierRemovalNA(x = NDVI[i,], dates=NDVI_dates, pred_dates=NDVI_dates,spline_spar = 0.4)
-  }
 
   # add class data
   NDVI_smooth$Class = as.factor(points$class) # add classification
@@ -509,51 +588,66 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
   plot(rf)
   varImpPlot(rf)
 
-  source( '/groups/manngroup/IFPRI_Ethiopia_Dought_2016/IFPRI_Ethiopia_Drought_2016/mctune.R')
-  rf_ranges = list(ntree=c(seq(1,1000,100),seq(1000,8000,500)),mtry=seq(5,15,2))
-  set.seed(10)
-  tuned.rf = mctune(method = randomForest, train.x = formula1, data = na.omit(NDVI_smooth),
-         tunecontrol = tune.control(sampling = "cross",cross = 5), ranges=rf_ranges,
-         mc.control=list(mc.cores=20, mc.preschedule=T),confusionmatrizes=T )
-  save(tuned.rf, file = paste('./NDVI_tuned_rf.RData',sep='') )
-  load('./NDVI_tuned_rf.RData')
+  #source( '/groups/manngroup/IFPRI_Ethiopia_Dought_2016/IFPRI_Ethiopia_Drought_2016/mctune.R')
+  #rf_ranges = list(ntree=c(seq(1,1000,100),seq(1000,8000,500)),mtry=seq(5,15,2))
+  #set.seed(10)
+  #tuned.rf = mctune(method = randomForest, train.x = formula1, data = na.omit(NDVI_smooth),
+  #       tunecontrol = tune.control(sampling = "cross",cross = 5), ranges=rf_ranges,
+  #       mc.control=list(mc.cores=20, mc.preschedule=T),confusionmatrizes=T )
+  #save(tuned.rf, file = paste('./NDVI_tuned_rf.RData',sep='') )
+  #load('./NDVI_tuned_rf.RData')
 
-  tuned.rf$best.model
-  plot(tuned.rf)
+  #tuned.rf$best.model
+  #plot(tuned.rf)
 
   # WORKS WELL LEARN HOW TO TUNE
   svm_model1 <- svm(formula1,na.omit(NDVI_smooth))
   table(predict(svm_model1), NDVI_smooth$Class)
+  #save(svm_model1, 
+  #  file = '/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/LandUseClassifications/svm_model1.RData')
+
+  set.seed(10)
+  obj <- tune.svm(formula1, data = na.omit(NDVI_smooth), gamma =
+   seq(.5, .9, by = .1), cost = seq(100,1000, by = 100))
+
+  set.seed(10)
+  svm_tuned<-mctune(confusionmatrizes=T,
+          mc.control=list(mc.cores=15, mc.preschedule=F), method=svm,
+          ranges=list(type='C',kernel='radial',gamma=3^(-10:-4),cost=3^(-8:8)),
+          train.x=formula1,data = na.omit(NDVI_smooth),validation.x=NULL,  validation.y=NULL,
+          tunecontrol=tune.control(sampling='cross',cross=3,performances=T,nrepeat=5,best.model=T))
 
 
   # Predict land class --------------------------------------------------
 
-  rm(list=ls()[grep('stack',ls())]) # running into memory issues clear stacks load one by one
-
-  setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/Data Stacks/Smoothed') # don't load smoothed...
-
-  # load data stacks from both directories
-  dir1 = list.files('.','.RData',full.names=T)
-  lapply(dir1, load,.GlobalEnv)
-
+  #  Class Codes:
+  #  1 agforest 2 arid 3 dryag 4 forest 5 semiarid 6 shrub 7 water 8 wetag 9 wetforest
+ 
   setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/LandUseClassifications/')
+  load('./svm_model1.RData')
 
-
-  cl = makeCluster(15)
-  beginCluster(cl)
-  lc = clusterR(NDVI_stack_h21v07_wo_clouds_clean_smooth, predict, args=list(model = svm_model1))
-  endCluster()
-
-
-  lc =  predict(NDVI_stack_h21v07_wo_clouds_clean,tuned.rf$best.model)
-  plot(lc)
-
-  writeRaster(lc,'/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/LandUseClassifications/h21v07_lc.tif')
+  for(stacks in c('NDVI_stack_h21v07_smooth','NDVI_stack_h21v08_smooth','NDVI_stack_h22v07_smooth',
+		'NDVI_stack_h22v08_smooth')){
+  	beginCluster(10)
+	print(paste('predicting stack',stacks))
+  	lc = clusterR(get(stacks), predict, args=list(model = svm_model1))
+  	endCluster()
+  	writeRaster(lc,paste('./',stacks,'_lc_svm_mn.tif',sep=''),
+		overwrite=T)
+  }
 
 
 
   
-# Extract polygon or points data from stacks ------------------------
+# Extract polygon or points data from stacks -------------------------------------
+
+
+  library(data.table)
+  setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/Data Stacks/WO Clouds Clean/') # don't load smoothed...
+
+  # load data stacks from both directories
+  dir1 = list.files('.','.RData',full.names=T)
+  lapply(dir1, load,.GlobalEnv)
 
   # get polygon data 
   #ogrInfo('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/EnumerationAreas/','EnumerationAreasUTM')
@@ -561,17 +655,47 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
   #Polys = spTransform(Polys, CRS("+proj=sinu +lon_0=0 +x_0=0 +y_0=0 +a=6371007.181 +b=6371007.181 +units=m +no_defs"))
   #writeOGR(Polys, dsn="/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/EnumerationAreas/", 
   #     layer="EnumerationAreasSIN", driver="ESRI Shapefile") # this is in geographical projection
-  Polys = readOGR('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/EnumerationAreas/','EnumerationAreasSIN')
+  Polys = readOGR('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/EnumerationAreas/','EnumerationAreasSIN',
+	stringsAsFactors = F)
   Polys$id = 1:dim(Polys@data)[1]
 
+  head(Polys)
+  unique(Polys$R_NAME)
+  Polys = Polys[!(Polys$R_NAME %in% c('Special EA','SOMALI','Addis Ababa','SOMALIE')),]
 
 
-  # extract values croped to point or polygon
+  # break into blocks of polygons
+  block_width = 1000
+  nrows = dim(Polys)[1]
+  nblocks <- nrows%/%block_width
+  bs_rows <- seq(1,nblocks*block_width+1,block_width)
+  bs_nrows <- rbind(matrix(block_width,length(bs_rows)-1,1),nrows-bs_rows[length(bs_rows)]+1)
+  print('Working on the following rows')
+  print(paste(bs_rows))
 
-  out2 = extract_value_point_polygon(Polys[1:200,],list(NDVI_stack_h22v08_wo_clouds_clean,NDVI_stack_h22v07_wo_clouds_clean,
-		NDVI_stack_h21v08_wo_clouds_clean,NDVI_stack_h21v07_wo_clouds_clean),16)
+  # use iterator package to move through rows 
+  inter_rows = lapply(1:length(bs_rows), function(x) seq(bs_rows[x],(bs_rows[x]+bs_nrows[x]-1)))  
+  inter_rows = iter(inter_rows)
+  
+  out = foreach(rows= inter_rows) %do% {
+  	# limit size of polys to avoid memory issues
+	Polys_sub = Polys[rows,]
+  	# extract values croped to point or polygon
+  	Poly_Veg_Ext = extract_value_point_polygon(Polys_sub,list(NDVI_stack_h22v08_wo_clouds_clean,
+		NDVI_stack_h22v07_wo_clouds_clean,
+		NDVI_stack_h21v08_wo_clouds_clean,NDVI_stack_h21v07_wo_clouds_clean),10)
+  	return(Poly_Veg_Ext)
+  }
 
+ 
 
+# map reduce
+  user  system elapsed
+759.820  50.295  93.392
+
+# w.o map reduce
+    user   system  elapsed
+1353.121   83.147   86.765
 
 
 
