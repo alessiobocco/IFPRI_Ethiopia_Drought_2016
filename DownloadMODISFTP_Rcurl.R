@@ -518,23 +518,24 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
          # stack data and save
          stacked = stack(flist)
          names(stacked) = flist_dates
-         assign(paste(product,'stack',tile,'WO Clouds Clean LC',sep='_'),stacked)
-         save( list=paste(product,'stack',tile,'WO Clouds Clean LC',sep='_') ,
-                 file = paste('./WO Clouds Clean LC/',product,'_stack_',
-                 tile,'_WO Clouds Clean LC','.RData',sep='') )
+         assign(paste(product,'stack',tile,'WO_Clouds_Clean_LC',sep='_'),stacked)
+         save( list=paste(product,'stack',tile,'WO_Clouds_Clean_LC',sep='_') ,
+                 file = paste('./WO_Clouds_Clean_LC/',product,'_stack_',
+                 tile,'_WO_Clouds_Clean_LC','.RData',sep='') )
   }}
-
 
 
 
   
 # Extract polygon or points data from stacks -------------------------------------
 
-
   library(data.table)
-  setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/Data Stacks/WO Clouds Clean/') # don't load smoothed...
+  setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/Data Stacks/WO Clouds Clean LC/') # don't load smoothed...
+  dir.create(file.path('../../Processed Panel/ExtractRaw/'), showWarnings=F,recursive=T) # create dir for tifs
+
 
   # load data stacks from both directories
+  rm(list=ls()[grep('stack',ls())]) # running into memory issues clear stacks load one by one
   dir1 = list.files('.','.RData',full.names=T)
   lapply(dir1, load,.GlobalEnv)
 
@@ -550,7 +551,7 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
 
   head(Polys)
   unique(Polys$R_NAME)
-  Polys = Polys[!(Polys$R_NAME %in% c('Special EA','SOMALI','Addis Ababa','SOMALIE')),]
+  Polys = Polys[!(Polys$R_NAME %in% c('SOMALI','Addis Ababa','SOMALIE')),]
 
 
   # break into blocks of polygons
@@ -565,39 +566,35 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
   # use iterator package to move through rows 
   inter_rows = lapply(1:length(bs_rows), function(x) seq(bs_rows[x],(bs_rows[x]+bs_nrows[x]-1)))  
   inter_rows = iter(inter_rows)
+
+  product = c('NDVI','EVI')[1]
   
-  out = foreach(rows= inter_rows) %do% {
+  out = foreach(rows= seq(1,inter_rows$length)[1]) %do% {
   	# limit size of polys to avoid memory issues
-	Polys_sub = Polys[rows,]
+	Polys_sub = Polys[nextElem(inter_rows),]
   	# extract values croped to point or polygon
-  	Poly_Veg_Ext = extract_value_point_polygon(Polys_sub,list(NDVI_stack_h22v08_wo_clouds_clean,
-		NDVI_stack_h22v07_wo_clouds_clean,
-		NDVI_stack_h21v08_wo_clouds_clean,NDVI_stack_h21v07_wo_clouds_clean),10)
+  	Poly_Veg_Ext = extract_value_point_polygon(Polys_sub,
+		list(get(paste(product,'_stack_h22v08_WO_Clouds_Clean_LC',sep='')),
+		get(paste(product,'_stack_h22v07_WO_Clouds_Clean_LC',sep='')),
+		get(paste(product,'_stack_h21v08_WO_Clouds_Clean_LC',sep='')),
+           	get(paste(product,'_stack_h21v07_WO_Clouds_Clean_LC',sep=''))),10)
+	print("saving block")
+	save(Poly_Veg_Ext ,
+                 file = paste('../../Processed Panel/ExtractRaw/',rows,product,'_panel_',
+                 '_ExtractRaw','.RData',sep='') )
   	return(Poly_Veg_Ext)
   }
 
+ save(out ,file = paste('../../Processed Panel/ExtractRaw/',product,'_panel_',
+                 '_ExtractRaw','_out.RData',sep='') )
+
  
-
-# map reduce
-  user  system elapsed
-759.820  50.295  93.392
-
-# w.o map reduce
-    user   system  elapsed
-1353.121   83.147   86.765
-
-
-
-
-
-
-
-
 
 
 
 
 # Visualize examples of smoothed data -------------------------------------
+
 
 
   setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/LandUseClassifications/')
