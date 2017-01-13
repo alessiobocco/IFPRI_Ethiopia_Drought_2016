@@ -66,24 +66,60 @@
   #NDVI_stack_h22v08_smooth_mean=clusterR(NDVI_stack_h22v08_smooth,f2)
   #writeRaster(NDVI_stack_h22v08_smooth_mean,'NDVI_stack_h22v08_smooth_mean.tif')
   #endCluster()
-  NDVI_stack_h21v07_smooth[[262]]=raster('../Data Stacks/Smoothed/NDVI_stack_h21v07_smooth_mean.tif')
-  names(NDVI_stack_h21v07_smooth[[262]])='mean'
-  NDVI_stack_h21v08_smooth[[262]]=raster('../Data Stacks/Smoothed/NDVI_stack_h21v08_smooth_mean.tif')
-  names(NDVI_stack_h21v08_smooth[[262]])='mean'
-  NDVI_stack_h22v07_smooth[[262]]=raster('../Data Stacks/Smoothed/NDVI_stack_h22v07_smooth_mean.tif')
-  names(NDVI_stack_h22v07_smooth[[262]])='mean'
-  NDVI_stack_h22v08_smooth[[262]]=raster('../Data Stacks/Smoothed/NDVI_stack_h22v08_smooth_mean.tif')
-  names(NDVI_stack_h22v08_smooth[[262]])='mean'
 
-  # Add feature of stack number to correct for edge effects
-  NDVI_stack_h21v07_smooth[[263]]=2107
-  names(NDVI_stack_h21v07_smooth[[263]])='tile'
-  NDVI_stack_h21v08_smooth[[263]]=2108
-  names(NDVI_stack_h21v08_smooth[[263]])='tile'
-  NDVI_stack_h22v07_smooth[[263]]=2207
-  names(NDVI_stack_h22v07_smooth[[263]])='tile'
-  NDVI_stack_h22v08_smooth[[263]]=2208
-  names(NDVI_stack_h22v08_smooth[[263]])='tile'
+  beginCluster(5,type="SOCK")
+  f2 <- function(x) calc(x, sd)
+  setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/Data Stacks/Smoothed/')
+  NDVI_stack_h21v07_smooth_sd=clusterR(NDVI_stack_h21v07_smooth, f2)
+  writeRaster(NDVI_stack_h21v07_smooth_sd,'NDVI_stack_h21v07_smooth_sd.tif')
+  NDVI_stack_h21v08_smooth_sd=clusterR(NDVI_stack_h21v08_smooth,f2)
+  writeRaster(NDVI_stack_h21v08_smooth_sd,'NDVI_stack_h21v08_smooth_sd.tif')
+  NDVI_stack_h22v07_smooth_sd=clusterR(NDVI_stack_h22v07_smooth,f2)
+  writeRaster(NDVI_stack_h22v07_smooth_sd,'NDVI_stack_h22v07_smooth_sd.tif')
+  NDVI_stack_h22v08_smooth_sd=clusterR(NDVI_stack_h22v08_smooth,f2)
+  writeRaster(NDVI_stack_h22v08_smooth_sd,'NDVI_stack_h22v08_smooth_sd.tif')
+  endCluster()
+
+
+  beginCluster(5,type="SOCK")
+  f2 <- function(x) calc(x, max)
+  setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/Data Stacks/Smoothed/')
+  NDVI_stack_h21v07_smooth_mx=clusterR(NDVI_stack_h21v07_smooth, f2)
+  writeRaster(NDVI_stack_h21v07_smooth_mx,'NDVI_stack_h21v07_smooth_mx.tif')
+  NDVI_stack_h21v08_smooth_mx=clusterR(NDVI_stack_h21v08_smooth,f2)
+  writeRaster(NDVI_stack_h21v08_smooth_mx,'NDVI_stack_h21v08_smooth_mx.tif')
+  NDVI_stack_h22v07_smooth_mx=clusterR(NDVI_stack_h22v07_smooth,f2)
+  writeRaster(NDVI_stack_h22v07_smooth_mx,'NDVI_stack_h22v07_smooth_mx.tif')
+  NDVI_stack_h22v08_smooth_mx=clusterR(NDVI_stack_h22v08_smooth,f2)
+  writeRaster(NDVI_stack_h22v08_smooth_mx,'NDVI_stack_h22v08_smooth_mx.tif')
+  endCluster()
+
+
+
+  # add mean & sd to stacks
+  layers_2_add = c('mean','sd','tile') # 'mean','sd','tile' :  Tile adds tile number for training
+
+  foreach(product = c('NDVI','EVI')) %do% {
+     for( tile in  tiles){
+          stack_name = paste(product,'_stack_',tile,'_smooth',sep='') 
+	  stack_data = get(stack_name)
+
+	  zs = dim(stack_data)[3]  # use as index
+	  for(layer in layers_2_add){
+		# assign computed raster data to end of stack
+		if(layer!='tile'){stack_data[[zs+1]]=raster(
+			paste('../Data Stacks/Smoothed/',product,'_stack_',tile,'_smooth_',layer,'.tif',sep=''))}
+		if(layer=='tile'){  # assign stack number for training (minimize edge)
+			hnumb =   gsub("^.*h([0-9]{2}).*$", "\\1",stack_name,perl = T)
+			vnumb =   gsub("^.*v([0-9]{2}).*$", "\\1",stack_name,perl = T)
+		 	stack_data[[zs+1]]=as.numeric(paste(hnumb,vnumb,sep=''))}
+	        # name layer
+		names(stack_data[[zs+1]])=layer
+         	assign(paste(product,'_stack_',tile,'_smooth',sep=''),stack_data)
+		zs=zs+1  # update index
+	  }
+     }
+  }
 
 
   # extract time series (MUST BE DONE ON SHORT OR LARGER MEMORY NODE, DOESN"T WORK ON DEFQ OR DEBUG)

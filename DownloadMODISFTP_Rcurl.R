@@ -270,6 +270,7 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
 
 
 # stack smoother -----------------------------------------------------
+  # this stack is used for land cover classification only (bc classifier can't have NA values)
 
   rm(list=ls()[grep('stack',ls())]) # running into memory issues clear stacks load one by one
 
@@ -376,7 +377,7 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
 			'_',names(data_stackvalues[[i]]),'.tif',sep=''),overwrite=T)
 		}
 
-	 print(paste('Restacking',product,tile_2_process,sep=' '))
+	 print(paste('Restacking',product,tile,sep=' '))
          # Set up data
          flist = list.files("./WO Clouds/Tifs/",glob2rx(paste(product,'_',tile,'*','.tif$',sep='')),full.names = T)
          flist_dates = gsub("^.*_X([0-9]{7}).*$", "\\1",flist,perl = T)  # Strip dates
@@ -395,6 +396,8 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
 
 
 # Rescale and set valid ranges of data  ---------------------------------------------
+
+
   setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data//Data Stacks')
 
   # load data stacks from both directories
@@ -418,7 +421,7 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
         print(paste('Working on',product,tile))	
         # load product data
         #lapply(dir1[grep(product,dir1)],load,.GlobalEnv) 
-        data_stackvalues = get(paste(product,'_stack_',tile,sep=''))
+        data_stackvalues = get(paste(product,'_stack_',tile,'_wo_clouds',sep=''))
         valid_values = valid[grep(product,valid$stack),]
 
 	ScaleClean = function(x){
@@ -428,14 +431,12 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
         	#x = x * as.numeric(valid_values$scale)
         	x}
         junk = foreach(i=1:dim(data_stackvalues)[3]) %dopar% {
+		print(paste(i))
                 clean = ScaleClean(data_stackvalues[[i]])
 		writeRaster(clean, filename=paste('./WO Clouds Clean/tifs/',product,'_stack_',tile,'_wo_clouds_clean_',
                  names(data_stackvalues[[i]]),'.tif',sep=''), overwrite=T)
  	        return(0)
 		} 
-
-
-
   }}
 
 
@@ -445,9 +446,10 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
 
   setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/Data Stacks/WO Clouds Clean/tifs/')  # folder where  EVI .tifs are
   # create data stack for each variable and tile
+  registerDoParallel(8)
 
   foreach(product =  c('EVI','NDVI')) %do% {
-    for( tile_2_process in  tiles){
+    foreach( tile_2_process  =  tiles, .inorder=F) %dopar% {
 	 print(paste('processing',product,tile_2_process,sep=' '))
          # Set up data
          flist = list.files(".",glob2rx(paste(product,'_stack_',tile_2_process,'*','.tif$',sep='')),
@@ -467,174 +469,61 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
 
 
 
-
-
 # Limit to crop signal ----------------------------------------------------
+ #  Class Codes:
+ #  1 agforest 2 arid 3 dryag 4 forest 5 semiarid 6 shrub 7 water 8 wetag 9 wetforest
 
+
+  # load data in previous section and run common dates
   rm(list=ls()[grep('stack',ls())]) # running into memory issues clear stacks load one by one
+  setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/Data Stacks/WO Clouds Clean/') # don't load smoothed...
 
-  setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/Data Stacks/Smoothed/') # don't load smoothed... 
+  dir.create(file.path('../WO Clouds Clean LC/tifs/'), showWarnings=F,recursive=T) # create dir for tifs
 
   # load data stacks from both directories
   dir1 = list.files('.','.RData',full.names=T)
   lapply(dir1, load,.GlobalEnv)
 
-  setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/LandUseClassifications/')
-  
-  #### get original training dataset from previous study #### 
-  ET = readOGR('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/AdminBoundaries/','ETH_adm0')
-  ET = spTransform(ET, CRS(projection(NDVI_stack_h21v07_smooth)))
+  # set up directories and names
+  setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data//Data Stacks')
+  landcover_prefix = 'smooth_lc_svm_mn.tif'
+  landcover_path = '../LandUseClassifications/'
 
-  classes=list(dryag=c(2,15,82,123,129,153,162,198),
-  	wetag=c(7,11,16,18,27,41,47,53,54,77,85,90,91,100,102,105,106,117,119,122,125,133,150,151,152,166,173,178,182,195),
-  	agforest=c(6,8,9,21,32,61,95,111,128,131,137,143,145,168,169,186,191,193),
-  	arid = c(13,29,56,69,71,78,96,149,156),
-  	semiarid=c(5,14,19,23,24,26,30,35,36,37,40,43,44,45,50,57,59,60,63, 64,73,75,76,80,92,103,107,108,114,135,136,141,
-	146,158,167,170,179,197,200),
-  	shrub=c(1,12,17,22,25,39,46,48,49,52,55,62,66,67,72,87,88,89,93,97,104,109,110,113,116,118,132,138,142,144,147,148,154,
-	159,160,164,175,185,187,188,189,190,192),
-  	forest=c(3,4,10,28,31,38,42,51,58,68,74,79,81,84,86,94,98,99,101,115,120,121,124,126,127,130,139,140,157,161,163,165,
-	171,174,176,180,181,183,184,194,196),
-  	wetforest=c(20,33,34,65,70,83,112,134,155,199),
-  	water=c(172,177))
+  registerDoParallel(25)
 
-  points = unlist(getKMLcoordinates('./LUTrainingPoints_1stStudy.kml')) # get coordinates from original training data
-  dim(points) = c(3,200)
-  points = t(points)
-  points = data.frame(points)
-  names(points)=c('lon','lat','z')
-  points$class = NA
-  for (i in 1:length(classes)){
-    points$class[classes[[i]]]=names(classes)[i]
-  }
-  coordinates(points) = ~ lon + lat
-  proj4string(points) = "+proj=longlat +ellps=WGS84 +datum=WGS84"
-  points = spTransform(points, CRS(projection(NDVI_stack_h21v07_smooth)))
+  for(product in  c('EVI','NDVI')){  #'EVI','NDVI'
+  for( tile in tiles){
+        print(paste('Working on',product,tile))
+        # load quality flag
+        lc_stackvalues = raster(paste(landcover_path,'NDVI','_stack_',tile,'_',landcover_prefix,sep=''))
 
-  #  writeOGR(points, dsn=".", layer="LUTrainingPoints", driver="ESRI Shapefile") 
+        # remove clouds from produt
+        data_stackvalues = get(paste(product,'_stack_',tile,'_wo_clouds_clean',sep=''))
 
-  plot(NDVI_stack_h21v07_smooth[[1]])
-  plot(points,add=T)
+        foreach(i=1:dim(data_stackvalues)[3], .inorder=F) %dopar% {
+                print(i)
+                data_stackvalues[[i]][lc_stackvalues[[i]]==2|lc_stackvalues[[i]]==5|lc_stackvalues[[i]]==7|
+			lc_stackvalues[[i]]==9]=NA
+                writeRaster(data_stackvalues[[i]],paste('./WO Clouds Clean LC/tifs/',product,'_',tile,
+                        '_',names(data_stackvalues[[i]]),'_Clean_LC','.tif',sep=''),overwrite=T)
+                }
 
+         print(paste('Restacking',product,tile,sep=' '))
+         # Set up data
+         flist = list.files("./WO Clouds Clean LC/tifs/",glob2rx(paste(product,'_',tile,'*','.tif$',sep='')),full.names = T)
+         flist_dates = gsub("^.*_X([0-9]{7}).*$", "\\1",flist,perl = T)  # Strip dates
+         flist = flist[order(flist_dates)]  # file list in order
+         flist_dates = flist_dates[order(flist_dates)]  # file_dates list in order
 
-  #### Train classifier ####
-  library(randomForest)
-  library(e1071)
-  library(data.table)
+         # stack data and save
+         stacked = stack(flist)
+         names(stacked) = flist_dates
+         assign(paste(product,'stack',tile,'WO Clouds Clean LC',sep='_'),stacked)
+         save( list=paste(product,'stack',tile,'WO Clouds Clean LC',sep='_') ,
+                 file = paste('./WO Clouds Clean LC/',product,'_stack_',
+                 tile,'_WO Clouds Clean LC','.RData',sep='') )
+  }}
 
-  # add other important features  (run seperatately in parallel)
-  #beginCluster(10,type="SOCK")
-  #f2 <- function(x) calc(x, mean)
-  #setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/Data Stacks/Smoothed/')
-  #NDVI_stack_h21v07_smooth_mean=clusterR(NDVI_stack_h21v07_smooth, f2)
-  #writeRaster(NDVI_stack_h21v07_mean,'NDVI_stack_h21v07_smooth_mean.tif')
-  #NDVI_stack_h21v08_smooth_mean=clusterR(NDVI_stack_h21v08_smooth,f2)
-  #writeRaster(NDVI_stack_h21v08_smooth_mean,'NDVI_stack_h21v08_smooth_mean.tif')
-  #NDVI_stack_h22v07_smooth_mean=clusterR(NDVI_stack_h22v07_smooth,f2)
-  #writeRaster(NDVI_stack_h22v07_smooth_mean,'NDVI_stack_h22v07_smooth_mean.tif')
-  #NDVI_stack_h22v08_smooth_mean=clusterR(NDVI_stack_h22v08_smooth,f2)
-  #writeRaster(NDVI_stack_h22v08_smooth_mean,'NDVI_stack_h22v08_smooth_mean.tif')
-  #endCluster()
-  NDVI_stack_h21v07_smooth[[262]]=raster('../Data Stacks/Smoothed/NDVI_stack_h21v07_smooth_mean.tif')
-  names(NDVI_stack_h21v07_smooth[[262]])='mean'
-  NDVI_stack_h21v08_smooth[[262]]=raster('../Data Stacks/Smoothed/NDVI_stack_h21v08_smooth_mean.tif')
-  names(NDVI_stack_h21v08_smooth[[262]])='mean'
-  NDVI_stack_h22v07_smooth[[262]]=raster('../Data Stacks/Smoothed/NDVI_stack_h22v07_smooth_mean.tif')
-  names(NDVI_stack_h22v07_smooth[[262]])='mean'
-  NDVI_stack_h22v08_smooth[[262]]=raster('../Data Stacks/Smoothed/NDVI_stack_h22v08_smooth_mean.tif')
-  names(NDVI_stack_h22v08_smooth[[262]])='mean'
-
-
-  # Add feature of stack number to correct for edge effects
-  NDVI_stack_h21v07_smooth[[263]]=2107
-  names(NDVI_stack_h21v07_smooth[[263]])='tile'
-  NDVI_stack_h21v08_smooth[[263]]=2108
-  names(NDVI_stack_h21v08_smooth[[263]])='tile'
-  NDVI_stack_h22v07_smooth[[263]]=2207
-  names(NDVI_stack_h22v07_smooth[[263]])='tile'
-  NDVI_stack_h22v08_smooth[[263]]=2208
-  names(NDVI_stack_h22v08_smooth[[263]])='tile'
-
-
-  # extract time series (MUST BE DONE ON SHORT OR LARGER MEMORY NODE, DOESN"T WORK ON DEFQ OR DEBUG)
-  #NDVI = extract_value_point_polygon(points,list(NDVI_stack_h21v07_smooth,
-  #	NDVI_stack_h21v08_smooth,NDVI_stack_h22v07_smooth,
-  #	NDVI_stack_h22v08_smooth),30)
-  
-  #save(NDVI, file = paste('./NDVI_200p_LUClasses.RData',sep='') )
-  load('./NDVI_200p_LUClasses.RData')
-
-  # create a dataframe from list
-  NDVI = rbindlist(NDVI, fill=T) # convert list to table
-  NDVI_dates = gsub("^.*X([0-9]{7}).*$", "\\1",names(NDVI),perl = T)  # Strip dates
-  NDVI = as.data.frame.matrix(NDVI)
-  NDVI_smooth = as.matrix(NDVI)
-  
-  # fill NAs (water) with row means
-  k <- which(is.na(NDVI_smooth), arr.ind=TRUE)
-  NDVI_smooth[k] <- rowMeans(NDVI_smooth, na.rm=TRUE)[k[,1]]
-  NDVI_smooth = as.data.frame(NDVI_smooth)
-
-
-  # add class data
-  NDVI_smooth$Class = as.factor(points$class) # add classification
-
-  formula1 = Class ~ .
-
-  set.seed(10)
-  rf <- randomForest(formula1, data=na.omit(NDVI_smooth), ntree=2000, proximity=T)
-  table(predict(rf), NDVI_smooth$Class)
-  print(rf)
-  plot(rf)
-  varImpPlot(rf)
-
-  #source( '/groups/manngroup/IFPRI_Ethiopia_Dought_2016/IFPRI_Ethiopia_Drought_2016/mctune.R')
-  #rf_ranges = list(ntree=c(seq(1,1000,100),seq(1000,8000,500)),mtry=seq(5,15,2))
-  #set.seed(10)
-  #tuned.rf = mctune(method = randomForest, train.x = formula1, data = na.omit(NDVI_smooth),
-  #       tunecontrol = tune.control(sampling = "cross",cross = 5), ranges=rf_ranges,
-  #       mc.control=list(mc.cores=20, mc.preschedule=T),confusionmatrizes=T )
-  #save(tuned.rf, file = paste('./NDVI_tuned_rf.RData',sep='') )
-  #load('./NDVI_tuned_rf.RData')
-
-  #tuned.rf$best.model
-  #plot(tuned.rf)
-
-  # WORKS WELL LEARN HOW TO TUNE
-  svm_model1 <- svm(formula1,na.omit(NDVI_smooth))
-  table(predict(svm_model1), NDVI_smooth$Class)
-  #save(svm_model1, 
-  #  file = '/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/LandUseClassifications/svm_model1.RData')
-
-  set.seed(10)
-  obj <- tune.svm(formula1, data = na.omit(NDVI_smooth), gamma =
-   seq(.5, .9, by = .1), cost = seq(100,1000, by = 100))
-
-  set.seed(10)
-  svm_tuned<-mctune(confusionmatrizes=T,
-          mc.control=list(mc.cores=15, mc.preschedule=F), method=svm,
-          ranges=list(type='C',kernel='radial',gamma=3^(-10:-4),cost=3^(-8:8)),
-          train.x=formula1,data = na.omit(NDVI_smooth),validation.x=NULL,  validation.y=NULL,
-          tunecontrol=tune.control(sampling='cross',cross=3,performances=T,nrepeat=5,best.model=T))
-
-
-  # Predict land class --------------------------------------------------
-
-  #  Class Codes:
-  #  1 agforest 2 arid 3 dryag 4 forest 5 semiarid 6 shrub 7 water 8 wetag 9 wetforest
- 
-  setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/LandUseClassifications/')
-  load('./svm_model1.RData')
-
-  for(stacks in c('NDVI_stack_h21v07_smooth','NDVI_stack_h21v08_smooth','NDVI_stack_h22v07_smooth',
-		'NDVI_stack_h22v08_smooth')){
-  	beginCluster(10)
-	print(paste('predicting stack',stacks))
-  	lc = clusterR(get(stacks), predict, args=list(model = svm_model1))
-  	endCluster()
-  	writeRaster(lc,paste('./',stacks,'_lc_svm_mn.tif',sep=''),
-		overwrite=T)
-  }
 
 
 
