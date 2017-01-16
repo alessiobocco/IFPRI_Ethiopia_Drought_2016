@@ -63,8 +63,8 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
   ftp = 'ftp://ladsweb.nascom.nasa.gov/allData/6/'    # allData/6/ for evi, /51/ for landcover
   # allData/51/ for landcover DOESn't WORK jUST PULL FROM FTP
   strptime(gsub("^.*A([0-9]+).*$", "\\1",GetDates(location[1], location[2],products[1])),'%Y%j') # get list of all available dates for products[1]
-  out_dir = 'R:\\Mann_Research\\IFPRI_Ethiopia_Drought_2016\\Data\\VegetationIndex'
-  setwd(out_dir)
+#  out_dir = 'R:\\Mann_Research\\IFPRI_Ethiopia_Drought_2016\\Data\\VegetationIndex'
+#  setwd(out_dir)
   
  
 
@@ -242,6 +242,7 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
 
 # Limit stacks to common dates -------------------------------------------
 
+
   setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/')
 
   # load data stacks from both directories
@@ -344,7 +345,7 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
 
   
   
-# Remove low quality cells, Land Use, & assign projection FROM RAW, THEN STACK ------------------------------------------------
+# Remove low quality,CLEAN, & assign projection FROM RAW, THEN STACK ------------------------------------------------
 
   
   # load data in previous section and run common dates
@@ -357,8 +358,18 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
   # set up directories and names
   setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data//Data Stacks')
   reliability_prefix = 'pixel_reliability'
-  dir.create(file.path('./WO Clouds/Tifs'), showWarnings=F,recursive=T)  
+  dir.create(file.path('./WO Clouds/Tifs'), showWarnings=F,recursive=T)
+  dir.create(file.path('./WO Clouds Clean/tifs'), showWarnings=F,recursive=T)
+  dir.create(file.path('/lustre/groups/manngroup/WO Clouds Clean/Tifs'), showWarnings=F,recursive=T) # folder on high speed ssd drive
+
   registerDoParallel(25)
+
+
+ # setup a dataframe with valid ranges and scale factors
+  valid = data.frame(stack='NDVI', fill= -3000,validL=-2000,validU=10000,
+                scale=0.0001,stringsAsFactors=F)
+  valid = rbind(valid,c('EVI',-3000,-2000,10000,0.0001))
+  valid
 
 
   for(product in  c('EVI','NDVI')){  #'EVI','NDVI'
@@ -369,17 +380,36 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
 
 	# remove clouds from produt
         data_stackvalues = get(paste(product,'_stack_',tile,sep=''))
+        valid_values = valid[grep(product,valid$stack),]
 
-	foreach(i=1:dim(data_stackvalues)[3], .inorder=F) %dopar% { 
+        ScaleClean = function(x,y){
+                x[x==as.numeric(valid_values$fill)]=NA
+                x[x < as.numeric(valid_values$validL)]=NA
+                x[x > as.numeric(valid_values$validU)]=NA
+                #x = x * as.numeric(valid_values$scale)
+		x[ y!=0 & y!=1 ] = NA     # remove very low quality  
+                x}
+	# process and write to lustre
+	foreach(i=(1:dim(data_stackvalues)[3]), .inorder=F) %dopar% { 
 		print(i)
-		data_stackvalues[[i]][reliability_stackvalues[[i]]!=0]=NA
-		writeRaster(data_stackvalues[[i]],paste('./WO Clouds/Tifs/',product,'_',tile,
+                data_stackvalues[[i]] = ScaleClean(data_stackvalues[[i]],reliability_stackvalues[[i]])
+		writeRaster(data_stackvalues[[i]],paste('/lustre/groups/manngroup/WO Clouds Clean/Tifs/',product,'_',tile,
 			'_',names(data_stackvalues[[i]]),'.tif',sep=''),overwrite=T)
 		}
 
+	 # Copy files back from lustre and delete lustre
+	 flist = list.files("/lustre/groups/manngroup/WO Clouds Clean/Tifs/",
+		glob2rx(paste(product,'_',tile,'*','.tif$',sep='')),full.names = T)
+         fname = list.files("/lustre/groups/manngroup/WO Clouds Clean/Tifs/",
+		glob2rx(paste(product,'_',tile,'*','.tif$',sep='')),full.names = F)
+	 file.copy(from=flist, to=paste("./WO Clouds Clean/tifs",fname,sep='/'), 
+          	overwrite = T, recursive = F, copy.mode = T)
+	 file.remove(flist)
+
+	 # Restack outputs 
 	 print(paste('Restacking',product,tile,sep=' '))
          # Set up data
-         flist = list.files("./WO Clouds/Tifs/",glob2rx(paste(product,'_',tile,'*','.tif$',sep='')),full.names = T)
+         flist = list.files("./WO Clouds Clean/tifs/",glob2rx(paste(product,'_',tile,'*','.tif$',sep='')),full.names = T)
          flist_dates = gsub("^.*_X([0-9]{7}).*$", "\\1",flist,perl = T)  # Strip dates
          flist = flist[order(flist_dates)]  # file list in order
          flist_dates = flist_dates[order(flist_dates)]  # file_dates list in order
@@ -387,85 +417,13 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
          # stack data and save
          stacked = stack(flist)
          names(stacked) = flist_dates
-         assign(paste(product,'stack',tile,'wo_clouds',sep='_'),stacked)
-         save( list=paste(product,'stack',tile,'wo_clouds',sep='_') ,
-                 file = paste('./WO Clouds/',product,'_stack_',
-                 tile,'_wo_clouds','.RData',sep='') )
+         assign(paste(product,'stack',tile,'wo_clouds_clean',sep='_'),stacked)
+         save( list=paste(product,'stack',tile,'wo_clouds_clean',sep='_') ,
+                 file = paste('./WO Clouds Clean/',product,'_stack_',
+                 tile,'_wo_clouds_clean','.RData',sep='') )
   }} 
   
 
-
-# Rescale and set valid ranges of data  ---------------------------------------------
-
-
-  setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data//Data Stacks')
-
-  # load data stacks from both directories
-  dir1 = list.files('./WO Clouds/','.RData',full.names=T)
-  lapply(dir1, load,.GlobalEnv)
-  dir.create(file.path('../Data Stacks/WO Clouds Clean/tifs/'), showWarnings=F,recursive=T) # create dir for tifs
-
-
-  # setup a dataframe with valid ranges and scale factors
-  valid = data.frame(stack='NDVI', fill= -3000,validL=-2000,validU=10000,
-		scale=0.0001,stringsAsFactors=F)
-  valid = rbind(valid,c('EVI',-3000,-2000,10000,0.0001))
-  valid 
-
-#  rm(list=ls()[grep('stack',ls())]) # running into memory issues clear stacks load one by one
-
-  # Loop through valid ranges  
-  products2clean = unique(valid$stack)
-  for(product in c(products2clean)){
-  for( tile in tiles){
-        print(paste('Working on',product,tile))	
-        # load product data
-        #lapply(dir1[grep(product,dir1)],load,.GlobalEnv) 
-        data_stackvalues = get(paste(product,'_stack_',tile,'_wo_clouds',sep=''))
-        valid_values = valid[grep(product,valid$stack),]
-
-	ScaleClean = function(x){
-        	x[x==as.numeric(valid_values$fill)]=NA
-        	x[x < as.numeric(valid_values$validL)]=NA
-        	x[x > as.numeric(valid_values$validU)]=NA
-        	#x = x * as.numeric(valid_values$scale)
-        	x}
-        junk = foreach(i=1:dim(data_stackvalues)[3]) %dopar% {
-		print(paste(i))
-                clean = ScaleClean(data_stackvalues[[i]])
-		writeRaster(clean, filename=paste('./WO Clouds Clean/tifs/',product,'_stack_',tile,'_wo_clouds_clean_',
-                 names(data_stackvalues[[i]]),'.tif',sep=''), overwrite=T)
- 	        return(0)
-		} 
-  }}
-
-
-
-# Restack clean data -----------------------------------------------------
-
-
-  setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/Data Stacks/WO Clouds Clean/tifs/')  # folder where  EVI .tifs are
-  # create data stack for each variable and tile
-  registerDoParallel(8)
-
-  foreach(product =  c('EVI','NDVI')) %do% {
-    foreach( tile_2_process  =  tiles, .inorder=F) %dopar% {
-	 print(paste('processing',product,tile_2_process,sep=' '))
-         # Set up data
-         flist = list.files(".",glob2rx(paste(product,'_stack_',tile_2_process,'*','.tif$',sep='')),
-                 full.names = TRUE)
-         flist_dates = gsub("^.*_X([0-9]{7}).*$", "\\1",flist,perl = T)  # Strip dates
-         flist = flist[order(flist_dates)]  # file list in order
-         flist_dates = flist_dates[order(flist_dates)]  # file_dates list in order
-
-         # stack data and save
-         stacked = stack(flist)
-         names(stacked) = flist_dates
-         assign(paste(product,'stack',tile_2_process,'wo_clouds_clean',sep='_'),stacked)
-         save( list=paste(product,'stack',tile_2_process,'wo_clouds_clean',sep='_') ,
-                 file = paste('../../WO Clouds Clean/',product,'_stack_',
-		 tile_2_process,'_wo_clouds_clean','.RData',sep='') )
-  }}
 
 
 
@@ -477,8 +435,9 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
   # load data in previous section and run common dates
   rm(list=ls()[grep('stack',ls())]) # running into memory issues clear stacks load one by one
   setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/Data Stacks/WO Clouds Clean/') # don't load smoothed...
-
   dir.create(file.path('../WO Clouds Clean LC/tifs/'), showWarnings=F,recursive=T) # create dir for tifs
+  dir.create(file.path('/lustre/groups/manngroup/WO Clouds Clean LC/Tifs'), showWarnings=F,recursive=T) # folder on high speed
+
 
   # load data stacks from both directories
   dir1 = list.files('.','.RData',full.names=T)
@@ -500,15 +459,25 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
         # remove clouds from produt
         data_stackvalues = get(paste(product,'_stack_',tile,'_wo_clouds_clean',sep=''))
 
-        foreach(i=1:dim(data_stackvalues)[3], .inorder=F) %dopar% {
+        foreach(i=(1:dim(data_stackvalues)[3]), .inorder=F) %dopar% {
                 print(i)
-                data_stackvalues[[i]][lc_stackvalues[[i]]==2|lc_stackvalues[[i]]==5|lc_stackvalues[[i]]==7|
+                data_stackvalues[[i]][lc_stackvalues[[i]]==2|lc_stackvalues[[i]]==7|
 			lc_stackvalues[[i]]==9]=NA
-                writeRaster(data_stackvalues[[i]],paste('./WO Clouds Clean LC/tifs/',product,'_',tile,
-                        '_',names(data_stackvalues[[i]]),'_Clean_LC','.tif',sep=''),overwrite=T)
-                }
+                writeRaster(data_stackvalues[[i]],paste('/lustre/groups/manngroup/WO Clouds Clean LC/Tifs/'
+			,product,'_',tile,'_',names(data_stackvalues[[i]]),
+			'_Clean_LC','.tif',sep=''),overwrite=T)
+          }
 
+         # Copy files back from lustre and delete lustre
+         flist = list.files("/lustre/groups/manngroup/WO Clouds Clean LC/Tifs/",
+                glob2rx(paste(product,'_',tile,'*','.tif$',sep='')),full.names = T)
+         fname = list.files("/lustre/groups/manngroup/WO Clouds Clean LC/Tifs/",
+                glob2rx(paste(product,'_',tile,'*','.tif$',sep='')),full.names = F)
+         file.copy(from=flist, to=paste("./WO Clouds Clean LC/tifs",fname,sep='/'),
+                overwrite = T, recursive = F, copy.mode = T)
+         file.remove(flist)
          print(paste('Restacking',product,tile,sep=' '))
+
          # Set up data
          flist = list.files("./WO Clouds Clean LC/tifs/",glob2rx(paste(product,'_',tile,'*','.tif$',sep='')),full.names = T)
          flist_dates = gsub("^.*_X([0-9]{7}).*$", "\\1",flist,perl = T)  # Strip dates
@@ -532,6 +501,7 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
   library(data.table)
   setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/Data Stacks/WO Clouds Clean LC/') # don't load smoothed...
   dir.create(file.path('../../Processed Panel/ExtractRaw/'), showWarnings=F,recursive=T) # create dir for tifs
+  dir.create(file.path('/lustre/groups/manngroup/Processed Panel/ExtractRaw/'), showWarnings=F,recursive=T) # folder on high speed
 
 
   # load data stacks from both directories
@@ -555,7 +525,7 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
 
 
   # break into blocks of polygons
-  block_width = 1000
+  block_width = 250
   nrows = dim(Polys)[1]
   nblocks <- nrows%/%block_width
   bs_rows <- seq(1,nblocks*block_width+1,block_width)
@@ -569,7 +539,7 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
 
   product = c('NDVI','EVI')[1]
   
-  out = foreach(rows= seq(1,inter_rows$length)[1]) %do% {
+  out = foreach(rows= seq(1,inter_rows$length)) %do% {
   	# limit size of polys to avoid memory issues
 	Polys_sub = Polys[nextElem(inter_rows),]
   	# extract values croped to point or polygon
@@ -578,19 +548,27 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
 		get(paste(product,'_stack_h22v07_WO_Clouds_Clean_LC',sep='')),
 		get(paste(product,'_stack_h21v08_WO_Clouds_Clean_LC',sep='')),
            	get(paste(product,'_stack_h21v07_WO_Clouds_Clean_LC',sep=''))),10)
-	print("saving block")
+        print(paste("saving block",rows))
 	save(Poly_Veg_Ext ,
-                 file = paste('../../Processed Panel/ExtractRaw/',rows,product,'_panel_',
-                 '_ExtractRaw','.RData',sep='') )
-  	return(Poly_Veg_Ext)
+                 file = paste(
+		    '/lustre/groups/manngroup/Processed Panel/ExtractRaw/',
+		    rows,product,'_panel_','_ExtractRaw','.RData',sep='') )
+	rm(Poly_Veg_Ext)
+  	return(0)
   }
 
- save(out ,file = paste('../../Processed Panel/ExtractRaw/',product,'_panel_',
-                 '_ExtractRaw','_out.RData',sep='') )
+  # Copy files back from lustre and delete lustre
+  setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/Processed Panel/ExtractRaw/')
+  flist = list.files("/lustre/groups/manngroup/Processed Panel/ExtractRaw/",
+         glob2rx(paste('*','.RData$',sep='')),full.names = T)
+  fname = list.files("/lustre/groups/manngroup/Processed Panel/ExtractRaw/",
+         glob2rx(paste('*','.RData$',sep='')),full.names = F)
+  file.copy(from=flist, to=paste(".",fname,sep='/'),
+         overwrite = T, recursive = F, copy.mode = T)
+  file.remove(flist)
+  print(paste('Restacking',product,tile,sep=' '))
 
  
-
-
 
 
 # Visualize examples of smoothed data -------------------------------------
