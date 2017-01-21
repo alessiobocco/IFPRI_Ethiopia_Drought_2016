@@ -62,11 +62,12 @@
     if(class(dates_in)[1]== "POSIXct" )dates_in = as.Date(dates_in)
 
     length_diff = length(dates_str)-length(dates_end)
-    if(length_diff!=1){stop('difference in date lengths can only be =1')}else{
+    if(length_diff>1){stop('difference in date lengths can only be = +-1')}else{
                 if(length_diff==1){dates_end =  as.Date(c(as.character(dates_end),
 			as.character(dates_in[length(dates_in)])))  }
                 if(length_diff==-1){dates_str = c(dates_str,dates_in[1])}
         list(dates_str,dates_end)}
+    if(length_diff==0){ list(dates_str,dates_end)}
     }
 
 
@@ -196,17 +197,17 @@
 
     	# limit to fixed # of days before/after DOY
         DOY_in = as.POSIXlt(DOY_in)
-	DOY_before = DOY_in
+	DOY_before = DOY_in  # assign planing or harvest dates given from PlantHarvestTable
 
     	#names(unclass(DOY_before[1]))
     	if(dir=='before') DOY_before$mday=DOY_before$mday-days_shift      # set days before to doy - days_before
     	if(dir=='after') DOY_before$mday=DOY_before$mday+days_shift      # set days before to doy - days_before
-        if(dir=='beforeafter'){ DOY_before$mday=DOY_before$mday-days_shift 
+        if(dir=='beforeafter'){ DOY_before$mday=DOY_before$mday-days_shift  # store + and - days_shift
 		DOY_in$mday=DOY_in$mday+days_shift}
     	DOY_table = data.frame(DOY_before=DOY_before,DOY_in=DOY_in)   #join start end search dates
   
   	# list all days 'days_before' DOY_in
- 	if(dir=='before'|dir=='beforeafter'){ DOY_interest = as.POSIXlt(unlist(lapply(1:dim(DOY_table)[1],
+ 	if(dir=='before'| dir=='beforeafter'){ DOY_interest = as.POSIXlt(unlist(lapply(1:dim(DOY_table)[1],
 			function(h){format(seq(DOY_table[h,1],
 	                DOY_table[h,2],by='day'),'%Y-%m-%d')})),tz='UTC')}
 	if(dir=='after'){DOY_interest = as.POSIXlt(unlist(lapply(1:dim(DOY_table)[1],
@@ -352,7 +353,7 @@
  ######### Quant_percentile SHOULD BE 0.95 
  
  
- Annual_Summary_Functions=function(extr_values, PlantHarvestTable,Quant_percentile=0.05,aggregate=F,return_df=F,num_workers=5,
+ Annual_Summary_Functions=function(extr_values, PlantHarvestTable,Quant_percentile=0.95,aggregate=F,return_df=F,num_workers=5,
 	spline_spar = 0){
      # take in values from extract_value_point_polygon and create annual and global summary statistics
      # returns a list where elements are composed of annual and growing season statistics
@@ -361,12 +362,14 @@
      # if return_df==T, returns data frame of summary stats for long form panel
      # if spline_spar = 0, doesn't smooth data, as spline_spar increases smoothing decreases
      # iterate between spatial objects
+     require(MESS)
 
-     if(is.list(PlantHarvestTable)){RicePlantHarvest=PlantHarvestTable[[2]];PlantHarvestTable=PlantHarvestTable[[1]]}
+     if(!is.data.frame(PlantHarvestTable) ){
+	RicePlantHarvest=PlantHarvestTable[[2]];PlantHarvestTable=PlantHarvestTable[[1]]}
 
      registerDoParallel(num_workers)
      result_summary=foreach(i = 1:length(extr_values),.packages=c('raster','zoo'),.inorder=T) %dopar%{
-        if(is.na(extr_values[[i]])){ print('Empty Object');return(NA)} # avoid empties
+        if(sum(!is.na(extr_values[[i]]))==0){ print('Empty Object');return(NA)} # avoid empties
 
         # if aggregate = T, summarize multiple pixels per polygon into one smooth time series
 
@@ -380,10 +383,11 @@
               # Get dates from stack names
               dats = strptime( gsub("^.*X([0-9]+).*$", "\\1", names(extr_values[[i]])),format='%Y%j')
               # Calculate smoothed values
-      	if(spline_spar!=0){
-              smooth = lapply(1:dim(extr_values[[i]])[1],function(z){SplineAndOutlierRemoval(
+	      if(spline_spar!=0){
+                  smooth = lapply(1:dim(extr_values[[i]])[1],function(z){SplineAndOutlierRemoval(
                   x = as.numeric(extr_values[[i]][z,]), dates=as.Date(dats),
-                  pred_dates=as.Date(dats),spline_spar)})}else{
+                  pred_dates=as.Date(dats),spline_spar)})
+	      }else{
       	    	  smooth = lapply(1:dim(extr_values[[i]])[1],
 		  function(z) as.numeric(extr_values[[i]][z,]))	}
       
@@ -400,7 +404,7 @@
               smooth_4_dates = lapply(1:dim(extr_values[[i]])[1],function(z){SplineAndOutlierRemoval(
                   x = as.numeric(extr_values[[i]][z,]),
                   dates=as.Date(dats),
-                  pred_dates=as.Date(dats),spline_spar=0.2)})
+                  pred_dates=as.Date(dats),spline_spar=0.4)})
       	      plant_dates = lapply(1:length(smooth_4_dates),function(z){ AnnualMinumumBeforeDOY(x = smooth_4_dates[[z]],
                   dates_in = dats, DOY_in=PlantHarvestTable$planting,days_shift=30,dir='beforeafter')})
               harvest_dates = lapply(1:length(smooth_4_dates),function(z){ AnnualMinumumBeforeDOY(x = smooth_4_dates[[z]],
@@ -538,12 +542,8 @@
         	        dates_in = dats, date_range_st=rice_plant_dates[[z]],
         	        date_range_end=rice_harvest_dates[[z]], by_in='days',
 			FUN=function(x) quantile(x,p=Quant_percentile,type=8,na.rm=T))})
-      	}
-
-
-	#####################################################################
-
-    	# collect all data products
+      	
+        # collect all data products including rice
     	out = list(smooth_stat = smooth,plant_dates=plant_dates,harvest_dates=harvest_dates,A_mn=A_mn,
 		A_min=A_min,A_max=A_max,A_AUC=A_AUC,A_Qnt=A_Qnt,A_sd=A_sd,A_max_Qnt=A_max_Qnt,A_AUC_Qnt=A_AUC_Qnt,
 		G_mx_dates=G_mx_dates,G_mn=G_mn,G_min=G_min,G_mx=G_mx,G_AUC=G_AUC,G_Qnt=G_Qnt,G_mx_Qnt=G_mx_Qnt,G_AUC_Qnt=G_AUC_Qnt,G_AUC2=G_AUC2,
@@ -553,6 +553,19 @@
 		R_mx_dates=R_mx_dates,R_mn=R_mn,R_min=R_min,R_mx=R_mx,R_AUC=R_AUC,R_Qnt=R_Qnt,R_mx_Qnt=R_mx_Qnt,R_AUC_Qnt=R_AUC_Qnt,R_AUC2=R_AUC2,
                 R_AUC_leading=R_AUC_leading,R_AUC_trailing=R_AUC_trailing
 		)
+	}else{
+        # collect all data products w/o rice
+    	out = list(smooth_stat = smooth,plant_dates=plant_dates,harvest_dates=harvest_dates,A_mn=A_mn,
+		A_min=A_min,A_max=A_max,A_AUC=A_AUC,A_Qnt=A_Qnt,A_sd=A_sd,A_max_Qnt=A_max_Qnt,A_AUC_Qnt=A_AUC_Qnt,
+		G_mx_dates=G_mx_dates,G_mn=G_mn,G_min=G_min,G_mx=G_mx,G_AUC=G_AUC,G_Qnt=G_Qnt,G_mx_Qnt=G_mx_Qnt,G_AUC_Qnt=G_AUC_Qnt,G_AUC2=G_AUC2,
+		G_AUC_leading=G_AUC_leading,G_AUC_trailing=G_AUC_trailing,G_AUC_diff_mn=G_AUC_diff_mn,
+		G_AUC_diff_90th=G_AUC_diff_90th,T_G_Qnt=T_G_Qnt,G_sd=G_sd
+		)
+	}
+
+
+	#####################################################################
+
   	out = lapply(out,unlist) # unlist elements
 	
   	# convert dates back
@@ -822,3 +835,85 @@ stack_smoother <- function(stack_in,dates,pred_dates,spline_spar=0.1,workers=20,
 }
 
 
+
+
+
+
+
+  multi_grep_character <- function(find, inthis){ #returns location of multiple "find' elements in the vector 'inthis'
+    if(class(inthis)!= "character"){break("Error: in this must be a character vector")}
+    return(unlist(lapply(1:length(find), function(x) {grep(find[x],inthis)}   )))
+  }
+
+  outersect <- function(x, y) {
+    sort(c(x[!x%in%y],
+           y[!y%in%x]))
+  }
+
+
+
+
+
+#---------------------------------------------------------------------
+# This function takes a time series w/ dates (x, dates) and returns a spline smoothed time series with outliers removed.
+# Outliers are identified as points with absolute value more than out_sigma * sd, where sd is the residual
+# standard deviation between the input data and the initial spline fit, and out_sigma is a variable
+# coefficient. The spline smoothing parameter spline_spar controls the smoothness of the fit (see spline.smooth help)
+# and out_iterations controls the number of times that outliers are checked and removed w/ subsequent spline refit
+# pred_dates is a vector of dates where spline smoothed predictions of x are desired. If NA, then a daily series spanning
+# min(dates)-max(dates) is returned
+SplineAndOutlierRemoval <- function(x, dates, out_sigma=3, spline_spar=0.3, out_iterations=1,pred_dates){
+  dates <- as.numeric(dates) # spline doesn't work with dates
+  pred_dates = as.numeric(pred_dates)
+  # if prediction dates aren't provided, we assume we want daily ones
+  if(is.na(pred_dates[1])){
+    pred_dates <- min(dates, na.rm=T):max(dates, na.rm=T)}
+  # eliminate outliers and respline
+  for(i in 1:out_iterations){
+    # fit a smoothing spline to non-missing data
+    spl <- try(smooth.spline(dates[!is.na(x)], x[!is.na(x)], spar=spline_spar), silent=T)
+    if(inherits(spl, 'try-error')){
+      print("Failed to fit smoothing spline")
+      return(NA)
+    }
+    smooth_x <- try(predict(spl, dates)$y, silent=T) # calculate spline smoothed values
+    if(inherits(smooth_x, 'try-error')){
+      print("Failed to predict with spline")
+      return(NA)
+    }
+    smooth_x_resid <- x - smooth_x # calculate residuals from spline
+    smooth_x_resid_sd <- try(sd(smooth_x_resid, na.rm=T), silent=T) # standard dev of absolute value of residuals
+    if(inherits(smooth_x_resid_sd, 'try-error')){
+      print("Failed to get sd of residuals")
+      return(NA)
+    }
+    outliers <- abs(smooth_x_resid) > out_sigma * smooth_x_resid_sd
+    outliers[is.na(outliers)] <- F
+    if(sum(outliers) > 0){
+      # if we found outliers, eliminate them in x and refit up to iterations
+      x[outliers] <- NA
+    }else{
+      # if we didn't find any outliers, we abandon the iteration and return the smoothed values
+      smooth_x_return <- try(predict(spl, pred_dates)$y, silent=T)
+      if(inherits(smooth_x_return, 'try-error')){
+        print("No outliers, but failed to predict with final spline")
+        return(NA)
+      }else{
+        return(smooth_x_return)
+      }
+    }
+  }
+  # fit the spline to the outlier screened data, then return the predicted series
+  spl <- try(smooth.spline(dates[!is.na(x)], x[!is.na(x)], spar=spline_spar), silent=T)
+  if(inherits(spl, 'try-error')){
+    print("Failed to predict with final spline")
+    return(NA)
+  }else{
+    smooth_x_return <- try(predict(spl, pred_dates)$y, silent=T)
+    if(inherits(smooth_x_return, 'try-error')){
+      return(NA)
+    }else{
+      return(smooth_x_return)
+    }
+  }
+}

@@ -59,7 +59,7 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
   products =  c('MYD13Q1')  #EVI c('MYD13Q1','MOD13Q1')  , land cover = 'MCD12Q1' for 250m and landcover ='MCD12Q2'
   location = c(9.145000, 40.489673)  # Lat Lon of a location of interest within your tiles listed above #India c(-31.467934,-57.101319)  #
   tiles =   c('h21v07','h22v07','h21v08','h22v08')   # India example c('h13v12')
-  dates = c('2010-01-01','2016-03-30') # example c('year-month-day',year-month-day') c('2002-07-04','2016-02-02') 
+  dates = c('2011-01-01','2016-03-30') # example c('year-month-day',year-month-day') c('2002-07-04','2016-02-02') 
   ftp = 'ftp://ladsweb.nascom.nasa.gov/allData/6/'    # allData/6/ for evi, /51/ for landcover
   # allData/51/ for landcover DOESn't WORK jUST PULL FROM FTP
   strptime(gsub("^.*A([0-9]+).*$", "\\1",GetDates(location[1], location[2],products[1])),'%Y%j') # get list of all available dates for products[1]
@@ -387,7 +387,7 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
                 x[x < as.numeric(valid_values$validL)]=NA
                 x[x > as.numeric(valid_values$validU)]=NA
                 #x = x * as.numeric(valid_values$scale)
-		x[ y!=0 & y!=1 ] = NA     # remove very low quality  
+		x[ y<0 | y>1 ] = NA     # remove very low quality  
                 x}
 	# process and write to lustre
 	foreach(i=(1:dim(data_stackvalues)[3]), .inorder=F) %dopar% { 
@@ -414,7 +414,7 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
          flist = flist[order(flist_dates)]  # file list in order
          flist_dates = flist_dates[order(flist_dates)]  # file_dates list in order
 
-         # stack data and save
+         # stack data and save 
          stacked = stack(flist)
          names(stacked) = flist_dates
          assign(paste(product,'stack',tile,'wo_clouds_clean',sep='_'),stacked)
@@ -568,7 +568,136 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
   file.remove(flist)
   print(paste('Restacking',product,tile,sep=' '))
 
+
+
+
+# Compile data from polygon extract  --------------------------------------
+
+
+  flist = list.files("/lustre/groups/manngroup/Processed Panel/ExtractRaw/",
+         glob2rx(paste('*','.RData$',sep='')),full.names = T)
+  fname = list.files("/lustre/groups/manngroup/Processed Panel/ExtractRaw/",
+         glob2rx(paste('*','.RData$',sep='')),full.names = F)
+
+   load(flist[1])
+
+
+
+
+# Extract data from subset of eas that have agss data --------------------------
+# this is a subset of data for which agss data contains relevant crop data 
+
+  setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/Data Stacks/WO Clouds Clean LC/')
+
+  # load data stacks from both directories
+  rm(list=ls()[grep('stack',ls())]) # running into memory issues clear stacks load one by one
+  dir1 = list.files('.','.RData',full.names=T)
+  lapply(dir1, load,.GlobalEnv)
+
+
+ Polys_sub = readOGR('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/EnumerationAreas/','EnumerationAreasSIN_sub_agss',
+        stringsAsFactors = F)
+ Polys_sub$id = 1:dim(Polys_sub@data)[1]
+ product = c('NDVI','EVI')[1]
+
+ Poly_Veg_Ext_sub = extract_value_point_polygon(Polys_sub,
+                list(get(paste(product,'_stack_h22v08_WO_Clouds_Clean_LC',sep='')),
+                get(paste(product,'_stack_h22v07_WO_Clouds_Clean_LC',sep='')),
+                get(paste(product,'_stack_h21v08_WO_Clouds_Clean_LC',sep='')),
+                get(paste(product,'_stack_h21v07_WO_Clouds_Clean_LC',sep=''))),15)
+
+ save(Poly_Veg_Ext_sub,
+	file=paste('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/Processed Panel/ExtractRaw/',
+	product,'_Poly_Ext_sub_agss.RData',sep=''))
+
+ load(paste('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/Processed Panel/ExtractRaw/',
+        product,'_Poly_Ext_sub_agss.RData',sep=''))
+
+
+# Summarize vege data --------------------------------------------------
+
+  # Get planting and harvest dates
+  plantharvest =   PlantHarvestDates(start_date=dates[1],end_date=dates[2],PlantingMonth=4,
+	PlantingDay=1,HarvestMonth=1,HarvestDay=30)
+
+  # Get summary statistics lists
+  extr_values=Poly_Veg_Ext_sub[1:200]
+  PlantHarvestTable = plantharvest
+  Quant_percentile=0.90
+  num_workers = 16
+  spline_spar = 0
+  # a= Annual_Summary_Functions(extr_values, PlantHarvestTable,Quant_percentile)   # not working 
+  # a2= Annual_Summary_Functions(extr_values, PlantHarvestTable,Quant_percentile,aggregate=T)
+  a3 =  Annual_Summary_Functions(extr_values, PlantHarvestTable,Quant_percentile, aggregate=T, return_df=T)
+
+
+
+
+# pull and summarize other data ---------------------------------------
  
+ Polys_sub = readOGR('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/EnumerationAreas/','EnumerationAreasSIN_sub_agss',
+        stringsAsFactors = F)
+ setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/DistanceTransport/')
+
+ # reproject
+ example = proj4string(raster('../LandUseClassifications/NDVI_stack_h21v07_smooth_lc_svm_mn.tif'))
+ #dist_rcap = raster('EucDist_Rcap.tif')
+ #dist_rcap = projectRaster(dist_rcap, crs= crs(example), filename = './EucDist_Rcap_sin.tif',overwrite=T)
+ #roadden = raster('RoadDen_5km_WLRC.tif')
+ #roadden = projectRaster(roadden,crs=crs( example), filename = './RoadDen_5km_WLRC_sin.tif',overwrite=T)
+ #dist_pp50k = raster('EucDist_pp50k.tif')
+ #dist_pp50k = projectRaster(dist_pp50k, crs=crs(example), filename = './EucDist_pp50k_sin.tif',overwrite=T)
+
+ dist_rcap = raster('EucDist_Rcap_sin.tif')
+ roadden = raster('RoadDen_5km_WLRC_sin.tif')
+ dist_pp50k = raster('EucDist_pp50k_sin.tif')
+
+ plot(dist_rcap)
+ points(coordinates(Polys_sub),add=T, col='red')
+
+ # Summarize to polygons
+ registerDoParallel(16)
+ for(layer in c('dist_rcap','roadden','dist_pp50k')){
+ 	values = extract_value_point_polygon(Polys_sub,get(layer),16)
+ 	mean = do.call('rbind',lapply(values, function(x) if (!is.null(x)) colMeans(x, na.rm=TRUE) else NA ))
+ 	Polys_sub[[layer]] = mean
+ }
+
+ # deal with PET
+ flist = list.files("../PET/", glob2rx(paste('*','.tif$',sep='')),full.names = T)
+ year = paste('20',gsub("^.*([0-9]{2})_([0-9]{2}).*$", "\\1",flist,perl = T),sep='')  # Strip dates
+ month = gsub("^.*([0-9]{2})_([0-9]{2}).*$", "\\2",flist,perl = T)  # Strip dates
+ flist_dates = paste(year,month,sep='_')   
+ flist = flist[order(as.numeric(paste(year,month,sep='')))]  # file list in order
+ flist_dates = flist_dates[order(flist_dates)]  # file_dates list in order
+ PET_stack = stack(flist)
+ names(PET_stack)=flist_dates
+ save(PET_stack,file = '../PET/PET_stack.RData')
+
+ # deal with ETa
+ #flist = list.files("../ETa Anomaly/", glob2rx(paste('*','.zip$',sep='')),full.names = T)
+ #for(i in 1:length(flist)){unzip(flist[i], exdir ='../ETa Anomaly/')}
+ setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/')
+ flist = list.files("./ETa Anomaly/", glob2rx(paste('*','.tif$',sep='')),full.names = T)
+ flist_dates = paste(gsub("^.*ma([0-9]{4}).*$", "\\1",flist,perl = T),sep='')  # Strip dates
+ flist = flist[order(as.numeric(paste(year,month,sep='')))]  # file list in order
+ flist_dates = flist_dates[order(flist_dates)]  # file_dates list in order
+ flist_dates = paste('20',substr(flist_dates,1,2),'_',substr(flist_dates,3,4),sep='')
+# ETA_stack = stack(flist)
+# names(PET_stack)=flist_dates
+# save(PET_stack,file = '../PET/PET_stack.RData')
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 # Visualize examples of smoothed data -------------------------------------
@@ -578,7 +707,7 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
   setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/LandUseClassifications/')
   load('./NDVI_200p_LUClasses.RData')
   library(data.table)
-  NDVI = rbindlist(NDVI)
+  #NDVI = rbindlist(NDVI)
   NDVI_dates = strptime(gsub("^.*X([0-9]{7}).*$", "\\1",names(NDVI),perl = T),format='%Y%j')  # Strip dates
 
   NDVI = as.data.frame.matrix(NDVI)
