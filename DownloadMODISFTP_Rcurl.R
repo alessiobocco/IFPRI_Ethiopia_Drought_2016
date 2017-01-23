@@ -600,46 +600,24 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
  Polys_sub$id = 1:dim(Polys_sub@data)[1]
  product = c('NDVI','EVI')[1]
 
- Poly_Veg_Ext_sub = extract_value_point_polygon(Polys_sub,
-                list(get(paste(product,'_stack_h22v08_WO_Clouds_Clean_LC',sep='')),
-                get(paste(product,'_stack_h22v07_WO_Clouds_Clean_LC',sep='')),
-                get(paste(product,'_stack_h21v08_WO_Clouds_Clean_LC',sep='')),
-                get(paste(product,'_stack_h21v07_WO_Clouds_Clean_LC',sep=''))),15)
+ #Poly_Veg_Ext_sub = extract_value_point_polygon(Polys_sub,
+ #               list(get(paste(product,'_stack_h22v08_WO_Clouds_Clean_LC',sep='')),
+ #               get(paste(product,'_stack_h22v07_WO_Clouds_Clean_LC',sep='')),
+ #               get(paste(product,'_stack_h21v08_WO_Clouds_Clean_LC',sep='')),
+ #               get(paste(product,'_stack_h21v07_WO_Clouds_Clean_LC',sep=''))),15)
 
- save(Poly_Veg_Ext_sub,
-	file=paste('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/Processed Panel/ExtractRaw/',
-	product,'_Poly_Ext_sub_agss.RData',sep=''))
-
- load(paste('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/Processed Panel/ExtractRaw/',
-        product,'_Poly_Ext_sub_agss.RData',sep=''))
-
-
-# Summarize vege data --------------------------------------------------
-
-  # Get planting and harvest dates
-  plantharvest =   PlantHarvestDates(start_date=dates[1],end_date=dates[2],PlantingMonth=4,
-	PlantingDay=1,HarvestMonth=1,HarvestDay=30)
-
-  # Get summary statistics lists
-  extr_values=Poly_Veg_Ext_sub[1:200]
-  PlantHarvestTable = plantharvest
-  Quant_percentile=0.90
-  num_workers = 16
-  spline_spar = 0
-  # a= Annual_Summary_Functions(extr_values, PlantHarvestTable,Quant_percentile)   # not working 
-  # a2= Annual_Summary_Functions(extr_values, PlantHarvestTable,Quant_percentile,aggregate=T)
-  a3 =  Annual_Summary_Functions(extr_values, PlantHarvestTable,Quant_percentile, aggregate=T, return_df=T)
+ #save(Poly_Veg_Ext_sub,
+ #	file=paste('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/Processed Panel/ExtractRaw/',
+ #	product,'_Poly_Ext_sub_agss.RData',sep=''))
 
 
 
 
-# pull and summarize other data ---------------------------------------
+# prepare other data ---------------------------------------
  
- Polys_sub = readOGR('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/EnumerationAreas/','EnumerationAreasSIN_sub_agss',
-        stringsAsFactors = F)
  setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/DistanceTransport/')
 
- # reproject
+ # reproject transport variables
  example = proj4string(raster('../LandUseClassifications/NDVI_stack_h21v07_smooth_lc_svm_mn.tif'))
  #dist_rcap = raster('EucDist_Rcap.tif')
  #dist_rcap = projectRaster(dist_rcap, crs= crs(example), filename = './EucDist_Rcap_sin.tif',overwrite=T)
@@ -648,49 +626,88 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
  #dist_pp50k = raster('EucDist_pp50k.tif')
  #dist_pp50k = projectRaster(dist_pp50k, crs=crs(example), filename = './EucDist_pp50k_sin.tif',overwrite=T)
 
- dist_rcap = raster('EucDist_Rcap_sin.tif')
- roadden = raster('RoadDen_5km_WLRC_sin.tif')
- dist_pp50k = raster('EucDist_pp50k_sin.tif')
-
- plot(dist_rcap)
- points(coordinates(Polys_sub),add=T, col='red')
-
- # Summarize to polygons
- registerDoParallel(16)
- for(layer in c('dist_rcap','roadden','dist_pp50k')){
- 	values = extract_value_point_polygon(Polys_sub,get(layer),16)
- 	mean = do.call('rbind',lapply(values, function(x) if (!is.null(x)) colMeans(x, na.rm=TRUE) else NA ))
- 	Polys_sub[[layer]] = mean
- }
-
  # deal with PET
- flist = list.files("../PET/", glob2rx(paste('*','.tif$',sep='')),full.names = T)
- year = paste('20',gsub("^.*([0-9]{2})_([0-9]{2}).*$", "\\1",flist,perl = T),sep='')  # Strip dates
- month = gsub("^.*([0-9]{2})_([0-9]{2}).*$", "\\2",flist,perl = T)  # Strip dates
- flist_dates = paste(year,month,sep='_')   
- flist = flist[order(as.numeric(paste(year,month,sep='')))]  # file list in order
- flist_dates = flist_dates[order(flist_dates)]  # file_dates list in order
- PET_stack = stack(flist)
- names(PET_stack)=flist_dates
- save(PET_stack,file = '../PET/PET_stack.RData')
+ #flist = list.files("../PET/", glob2rx(paste('*','.tif$',sep='')),full.names = T)
+ #year = paste('20',gsub("^.*([0-9]{2})_([0-9]{2}).*$", "\\1",flist,perl = T),sep='')  # Strip dates
+ #month = gsub("^.*([0-9]{2})_([0-9]{2}).*$", "\\2",flist,perl = T)  # Strip dates
+ #flist_dates = format(strptime(paste(year,month,'01',sep='_'),'%Y_%m_%d'),'%Y%j')   
+ #flist = flist[order(as.numeric(paste(year,month,sep='')))]  # file list in order
+ #flist_dates = flist_dates[order(flist_dates)]  # file_dates list in order
+ #PET_stack = stack(flist)
+ #names(PET_stack)=flist_dates
+ #save(PET_stack,file = '../PET/PET_stack.RData')
 
  # deal with ETa
- #flist = list.files("../ETa Anomaly/", glob2rx(paste('*','.zip$',sep='')),full.names = T)
- #for(i in 1:length(flist)){unzip(flist[i], exdir ='../ETa Anomaly/')}
+ #setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/')
+ #flist = list.files("./ETa Anomaly/", glob2rx(paste('*','.zip$',sep='')),full.names = T)
+ #foreach(i = 1:length(flist), .inorder=F) %dopar% {unzip(flist[i], exdir ='./ETa Anomaly/')}
+ #flist = list.files("./ETa Anomaly/", glob2rx(paste('*','ET.tif$',sep='')),full.names = T)
+ #flist_dates = paste(gsub("^.*ma([0-9]{4}).*$", "\\1",flist,perl = T),sep='')  # Strip dates
+ #flist = flist[order(flist_dates)]  # file list in order
+ #flist_dates = flist_dates[order(flist_dates)]  # file_dates list in order
+ #flist_dates = paste('20',substr(flist_dates,1,2),'-',substr(flist_dates,3,4),'-01',sep='')
+ #flist_dates = format(strptime(flist_dates, '%Y-%m-%d'),'%Y%j')
+ ## fix extents  FILE MAY01 IS USA NOT AFRICA
+ #flist = flist[-c(37)]
+ #flist_dates = flist_dates[-c(37)]
+
+ #example = raster(flist[1])
+ #for(layer in 1:length(flist)){ print(layer)	
+ #	print(raster(flist[layer]))
+ #	print(extent(raster(flist[layer]))==extent(example))
+ #}
+ #foreach(layer = 1:length(flist), .inorder=F, .errorhandling ='pass') %dopar% {
+ #	print(layer)
+ #	layer_out = raster(flist[layer])
+ #	print(layer_out)
+ #	if(extent(layer_out)!=extent(example)){
+ #		layer_out = resample(layer_out, example, method = "bilinear")
+ #		writeRaster(layer_out,flist[layer],overwrite=T)
+ # 	}
+ #}
+
+ #ETA_stack = stack(flist)
+ #names(ETA_stack)=flist_dates
+ #save(ETA_stack,file = './ETa Anomaly/ETA_stack.RData')
+
+
+
+# Summarize data to enumeration areas --------------------------------------------------
+
+ Polys_sub = readOGR('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/EnumerationAreas/','EnumerationAreasSIN_sub_agss',
+        stringsAsFactors = F)
+ Polys_sub$id = 1:dim(Polys_sub@data)[1]
+
+ load(paste('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/Processed Panel/ExtractRaw/',
+        product,'_Poly_Ext_sub_agss.RData',sep=''))
+
+  # Get planting and harvest dates
+  plantharvest =   PlantHarvestDates(start_date=dates[1],end_date=dates[2],PlantingMonth=4,
+        PlantingDay=1,HarvestMonth=1,HarvestDay=30)
+
+  # Get summary statistics lists
+  extr_values=Poly_Veg_Ext_sub
+  PlantHarvestTable = plantharvest
+  Quant_percentile=0.90
+  num_workers = 16
+  spline_spar = 0
+  NDVI_summary =  Annual_Summary_Functions(extr_values, PlantHarvestTable,Quant_percentile, aggregate=T, return_df=T)
+
+
+ # pull data to polygons
+ # load data
  setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/')
- flist = list.files("./ETa Anomaly/", glob2rx(paste('*','.tif$',sep='')),full.names = T)
- flist_dates = paste(gsub("^.*ma([0-9]{4}).*$", "\\1",flist,perl = T),sep='')  # Strip dates
- flist = flist[order(as.numeric(paste(year,month,sep='')))]  # file list in order
- flist_dates = flist_dates[order(flist_dates)]  # file_dates list in order
- flist_dates = paste('20',substr(flist_dates,1,2),'_',substr(flist_dates,3,4),sep='')
-# ETA_stack = stack(flist)
-# names(PET_stack)=flist_dates
-# save(PET_stack,file = '../PET/PET_stack.RData')
+ dist_rcap = raster('./DistanceTransport/EucDist_Rcap_sin.tif')
+ roadden = raster('./DistanceTransport/RoadDen_5km_WLRC_sin.tif')
+ dist_pp50k = raster('./DistanceTransport/EucDist_pp50k_sin.tif')
+ load( "./ETa Anomaly/ETA_stack.RData")
+ load('./PET/PET_stack.RData')
 
-
-
-
-
+ for(layer in c('dist_rcap','roadden','dist_pp50k')){
+        values = extract_value_point_polygon(Polys_sub,get(layer),16)
+        mean = do.call('rbind',lapply(values, function(x) if (!is.null(x)) colMeans(x, na.rm=TRUE) else NA ))
+        Polys_sub[[layer]] = mean
+ }
 
 
 
