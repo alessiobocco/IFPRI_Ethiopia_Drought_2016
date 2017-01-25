@@ -66,8 +66,9 @@ proj4string(agss) = "+init=epsg:32637"
 agss = spTransform(agss,CRS('+proj=sinu +lon_0=0 +x_0=0 +y_0=0 +a=6371007.181 +b=6371007.181 +units=m +no_defs'))
 
 # read all eas
-eas = readOGR('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/EnumerationAreas/','EnumerationAreasSIN',
-        stringsAsFactors = F)
+eas = readOGR('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/EnumerationAreas/EnumerationAreasSIN_codes.geojson', 
+	"OGRGeoJSON",stringsAsFactors = F)
+proj4string(eas) = '+proj=sinu +lon_0=0 +x_0=0 +y_0=0 +a=6371007.181 +b=6371007.181 +units=m +no_defs'
 eas_backup = eas
 eas$myid = 1:length(eas)
 
@@ -78,7 +79,7 @@ not_empty = unlist(lapply(which_over,function(x) dim(x)[1]>0)) # if over agss di
 eas_sub = eas[not_empty,]
 
 writeOGR(eas_sub, dsn="/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/EnumerationAreas/", 
-	layer="EnumerationAreasSIN_sub_agss", driver="ESRI Shapefile") 
+	layer="EnumerationAreasSIN_sub_agss_codes", driver="ESRI Shapefile") 
 
 
 
