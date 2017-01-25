@@ -647,9 +647,6 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
  #flist_dates = flist_dates[order(flist_dates)]  # file_dates list in order
  #flist_dates = paste('20',substr(flist_dates,1,2),'-',substr(flist_dates,3,4),'-01',sep='')
  #flist_dates = format(strptime(flist_dates, '%Y-%m-%d'),'%Y%j')
- ## fix extents  FILE MAY01 IS USA NOT AFRICA
- #flist = flist[-c(37)]
- #flist_dates = flist_dates[-c(37)]
 
  #example = raster(flist[1])
  #for(layer in 1:length(flist)){ print(layer)	
