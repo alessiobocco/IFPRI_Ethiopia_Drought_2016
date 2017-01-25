@@ -677,6 +677,7 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
  Polys_sub = readOGR('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/EnumerationAreas/','EnumerationAreasSIN_sub_agss',
         stringsAsFactors = F)
  Polys_sub$id = 1:dim(Polys_sub@data)[1]
+ product = 'NDVI'
 
  load(paste('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/Processed Panel/ExtractRaw/',
         product,'_Poly_Ext_sub_agss.RData',sep=''))
@@ -689,9 +690,10 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
   extr_values=Poly_Veg_Ext_sub
   PlantHarvestTable = plantharvest
   Quant_percentile=0.90
-  num_workers = 16
+  num_workers = 10
   spline_spar = 0
-  NDVI_summary =  Annual_Summary_Functions(extr_values, PlantHarvestTable,Quant_percentile, aggregate=T, return_df=T)
+  NDVI_summary =  Annual_Summary_Functions(extr_values, PlantHarvestTable,Quant_percentile, aggregate=T, 
+	return_df=T,num_workers)
 
 
  # pull data to polygons
@@ -706,9 +708,11 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
  for(layer in c('dist_rcap','roadden','dist_pp50k')){
         values = extract_value_point_polygon(Polys_sub,get(layer),16)
         mean = do.call('rbind',lapply(values, function(x) if (!is.null(x)) colMeans(x, na.rm=TRUE) else NA ))
-        Polys_sub[[layer]] = mean
+        Polys_sub[[layer]] = as.numeric(mean)
  }
 
+writeOGR(obj=Polys_sub, dsn="/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/EnumerationAreas/",
+	 layer="EnumerationAreasSIN_sub_agss_wdata", driver="ESRI Shapefile")
 
 
 

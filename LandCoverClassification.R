@@ -204,9 +204,9 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
 
 
   # extract time series (MUST BE DONE ON SHORT OR LARGER MEMORY NODE, DOESN"T WORK ON DEFQ OR DEBUG)
-  NDVI = extract_value_point_polygon(points,list(NDVI_stack_h21v07_smooth,
-       NDVI_stack_h21v08_smooth,NDVI_stack_h22v07_smooth,
-       NDVI_stack_h22v08_smooth),20)
+  #NDVI = extract_value_point_polygon(points,list(NDVI_stack_h21v07_smooth,
+  #     NDVI_stack_h21v08_smooth,NDVI_stack_h22v07_smooth,
+  #     NDVI_stack_h22v08_smooth),20)
 
   #save(NDVI, file = paste('./NDVI_200p_LUClasses_mnsdmx_newtrain.RData',sep='') )
   load('./NDVI_200p_LUClasses_mnsdmx_newtrain.RData')
@@ -236,15 +236,15 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
   varImpPlot(rf)
 
   #source( '/groups/manngroup/IFPRI_Ethiopia_Dought_2016/IFPRI_Ethiopia_Drought_2016/mctune.R')
-  #rf_ranges = list(ntree=c(seq(1,1000,100),seq(1000,8000,500)),mtry=seq(5,15,2))
-  #set.seed(10)
-  #tuned.rf = mctune(method = randomForest, train.x = formula1, data = na.omit(NDVI_smooth),
-  #       tunecontrol = tune.control(sampling = "cross",cross = 5), ranges=rf_ranges,
-  #       mc.control=list(mc.cores=20, mc.preschedule=T),confusionmatrizes=T )
-  #save(tuned.rf, file = paste('./NDVI_tuned_rf.RData',sep='') )
-  #load('./NDVI_tuned_rf.RData')
+  rf_ranges = list(ntree=c(seq(1,1000,100),seq(1000,8000,500)),mtry=seq(5,15,2))
+  set.seed(10)
+  tuned.rf = mctune(method = randomForest, train.x = formula1, data = na.omit(NDVI_smooth),
+         tunecontrol = tune.control(sampling = "cross",cross = 5), ranges=rf_ranges,
+         mc.control=list(mc.cores=20, mc.preschedule=T),confusionmatrizes=T )
+  save(tuned.rf, file = paste('./NDVI_tuned_rf_mnsdmx_newtrain.RData',sep='') )
+  load('./NDVI_tuned_rf_mnsdmx_newtrain.RData')
 
-  #tuned.rf$best.model
+  tuned.rf$best.model
   #plot(tuned.rf)
 
  # WORKS WELL LEARN HOW TO TUNE
@@ -254,10 +254,6 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
   #  file = '/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/LandUseClassifications/svm_model1.RData')
 
   set.seed(10)
-  obj <- tune.svm(formula1, data = na.omit(NDVI_smooth), gamma =
-   seq(.5, .9, by = .1), cost = seq(100,1000, by = 100))
-
-  set.seed(10)
   svm_tuned<-mctune(confusionmatrizes=T,
           mc.control=list(mc.cores=15, mc.preschedule=F), method=svm,
           ranges=list(type='C',kernel='radial',gamma=3^(-10:-1),cost=3^(-8:8)),
@@ -265,9 +261,11 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
           tunecontrol=tune.control(sampling='cross',cross=3,performances=T,nrepeat=5,best.model=T))
 
   save(svm_tuned,
-    file = '/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/LandUseClassifications/svm_model_tuned_mnsdmx.RData')
+    file = '/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/LandUseClassifications/svm_model_tuned_mnsdmx_newtrain.RData')
 
-  svm_tuned
+  svm_tuned$best.model
+  table(predict(svm_tuned$best.model), NDVI_smooth$Class)
+
 
 
 
@@ -277,15 +275,15 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
 
 
   setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/LandUseClassifications/')
-  load('./svm_model_tuned_mnsdmx.RData')
+  load('./svm_model_tuned_mnsdmx_newtrain.RData')
 
   for(stacks in c('NDVI_stack_h21v07_smooth','NDVI_stack_h21v08_smooth','NDVI_stack_h22v07_smooth',
-                'NDVI_stack_h22v08_smooth')){
-        beginCluster(10)
+                'NDVI_stack_h22v08_smooth') ){
+        beginCluster(13)
         print(paste('predicting stack',stacks))
         lc = clusterR(get(stacks), predict, args=list(model = svm_tuned$best.model))
         endCluster()
-        writeRaster(lc,paste('./',stacks,'_lc_svm_mn.tif',sep=''),
+        writeRaster(lc,paste('./',stacks,'_lc_svm_mnsdmx_newtrain.tif',sep=''),
                 overwrite=T)
   }
 

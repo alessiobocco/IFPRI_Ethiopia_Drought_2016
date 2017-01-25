@@ -30,6 +30,7 @@ library(compiler)
 library(ggplot2)
 library(foreign)
 library(plyr)
+library(rgeos)
 #cl <- makeCluster(32)
 #registerDoParallel(cl)
 
@@ -57,15 +58,37 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
 
 # Check if subsample of EAs matches EA shapefile ----------------------------------------------------
 
+# read in subset of agss eas with crop cut data
 agss = read.dta('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/AgSS/AgSS_2011_2016_EA.dta')
+agss = agss[!is.na(agss$x_coord),]
+coordinates(agss) =~ x_coord+y_coord
+proj4string(agss) = "+init=epsg:32637"
+agss = spTransform(agss,CRS('+proj=sinu +lon_0=0 +x_0=0 +y_0=0 +a=6371007.181 +b=6371007.181 +units=m +no_defs'))
 
+# read all eas
 eas = readOGR('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/EnumerationAreas/','EnumerationAreasSIN',
         stringsAsFactors = F)
 eas_backup = eas
+eas$myid = 1:length(eas)
+
+
+# Find EAS over subset
+which_over = over(eas,agss, returnList=T) # returns values of eas that are over agss, empty if missing
+not_empty = unlist(lapply(which_over,function(x) dim(x)[1]>0)) # if over agss dim >0
+eas_sub = eas[not_empty,]
+
+writeOGR(eas_sub, dsn="/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/EnumerationAreas/", 
+	layer="EnumerationAreasSIN_sub_agss", driver="ESRI Shapefile") 
 
 
 
-DO SPATIAL JOINS! 
+
+
+
+
+# JUNK BELOW #############
+
+
 
 
 
@@ -84,18 +107,19 @@ strsplit(linn, 'EA_NAME')
 
 clean = data.frame(OLD_EA_NAME =
 
-matrix("023-05",'0123-0',"Weserbi Guto",
+matrix(c("023-05",'0123-0',"Weserbi Guto",
 "032-03","032--0","Huluko Birbisa",
 "014-04","0014-0","Balaref",
 "025-05","0025-0","Layiyeduge",
 "020-01","020-o1","Derajaresso",
 "010-01","01001","Girari Reh",
 "001-01","00101","Pekedu",
-replace EA_NAME="007-01" if EA_NAME=="00701" & RK_NAME=="Yerer"
+"007-01","00701" ,"Yerer"
+"007-01","00701" & RK_NAME=="Chefe Konichi"
 
-ncol=3)
+),ncol=3,byrow=T)
 
-replace EA_NAME="007-01" if EA_NAME=="00701" & RK_NAME=="Yerer"
+
 replace EA_NAME="007-01" if EA_NAME=="00701" & RK_NAME=="Chefe Konichi"
 replace EA_NAME="007-03" if EA_NAME=="00703" & RK_NAME=="Chefe Konichi"
 replace EA_NAME="004-01" if EA_NAME=="00401" & RK_NAME=="Debir agonat"
