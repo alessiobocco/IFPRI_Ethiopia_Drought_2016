@@ -595,7 +595,7 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
   lapply(dir1, load,.GlobalEnv)
 
 
- Polys_sub = readOGR('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/EnumerationAreas/','EnumerationAreasSIN_sub_agss',
+ Polys_sub = readOGR('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/EnumerationAreas/','EnumerationAreasSIN_sub_agss_codes',
         stringsAsFactors = F)
  Polys_sub$id = 1:dim(Polys_sub@data)[1]
  product = c('NDVI','EVI')[1]
@@ -638,7 +638,7 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
  #save(PET_stack,file = '../PET/PET_stack.RData')
 
  # deal with ETa
- #setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/')
+ setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/')
  #flist = list.files("./ETa Anomaly/", glob2rx(paste('*','.zip$',sep='')),full.names = T)
  #foreach(i = 1:length(flist), .inorder=F) %dopar% {unzip(flist[i], exdir ='./ETa Anomaly/')}
  #flist = list.files("./ETa Anomaly/", glob2rx(paste('*','ET.tif$',sep='')),full.names = T)
@@ -649,16 +649,18 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
  #flist_dates = format(strptime(flist_dates, '%Y-%m-%d'),'%Y%j')
 
  #example = raster(flist[1])
+ #example = projectRaster(example,crs= CRS('+proj=sinu +lon_0=0 +x_0=0 +y_0=0 +a=6371007.181 +b=6371007.181 +units=m +no_defs'))
  #for(layer in 1:length(flist)){ print(layer)	
  #	print(raster(flist[layer]))
  #	print(extent(raster(flist[layer]))==extent(example))
  #}
+
+ #registerDoParallel(15)
  #foreach(layer = 1:length(flist), .inorder=F, .errorhandling ='pass') %dopar% {
  #	print(layer)
  #	layer_out = raster(flist[layer])
- #	print(layer_out)
  #	if(extent(layer_out)!=extent(example)){
- #		layer_out = resample(layer_out, example, method = "bilinear")
+ #		layer_out = projectRaster(layer_out, example)
  #		writeRaster(layer_out,flist[layer],overwrite=T)
  # 	}
  #}
@@ -671,7 +673,7 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
 
 # Summarize data to enumeration areas --------------------------------------------------
 
- Polys_sub = readOGR('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/EnumerationAreas/','EnumerationAreasSIN_sub_agss',
+ Polys_sub = readOGR('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/EnumerationAreas/','EnumerationAreasSIN_sub_agss_codes',
         stringsAsFactors = F)
  Polys_sub$id = 1:dim(Polys_sub@data)[1]
  product = 'NDVI'
@@ -708,17 +710,27 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
         Polys_sub[[layer]] = as.numeric(mean)
  }
 
-writeOGR(obj=Polys_sub, dsn="/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/EnumerationAreas/",
-	 layer="EnumerationAreasSIN_sub_agss_wdata", driver="ESRI Shapefile")
+ writeOGR(obj=Polys_sub, dsn="/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/EnumerationAreas/",
+	 layer="EnumerationAreasSIN_sub_agss_codes_wdata", driver="ESRI Shapefile")
+
+ 
+ # pull ETA PET data to polygons 
+
+ #setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/')
+ #load('./PET/PET_stack.RData')
+ #load('./ETa Anomaly/ETA_stack.RData')
+ #Poly_PET_Ext_sub = extract_value_point_polygon(Polys_sub,PET_stack,15)
+ #save(Poly_PET_Ext_sub,
+ #      file=paste('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/Processed Panel/ExtractRaw/',
+ #      'Poly_PET_Ext_sub.RData',sep=''))
+ Poly_ETA_Ext_sub = extract_value_point_polygon(Polys_sub,ETA_stack,15)
+ save(Poly_ETA_Ext_sub,
+       file=paste('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/Processed Panel/ExtractRaw/',
+       'Poly_ETA_Ext_sub.RData',sep=''))
 
 
 
-
-
-
-
-
-# Visualize examples of smoothed data -------------------------------------
+ # Visualize examples of smoothed data -------------------------------------
 
 
 
