@@ -917,3 +917,23 @@ SplineAndOutlierRemoval <- function(x, dates, out_sigma=3, spline_spar=0.3, out_
     }
   }
 }
+
+
+
+writeRasterLustre = function(obj, obj_name_w_type ,out_path, ssd_path){
+# this function writes files to solid state drives before transfering data back
+  # create path
+  dir.create(ssd_path, showWarnings = FALSE)
+  # write object
+  writeRaster(obj,file.path(ssd_path,obj_name_w_type),overwrite=T)
+
+  # Copy files back from lustre and delete lustre
+  dir.create(out_path, showWarnings = FALSE)
+  ext = strsplit(obj_name_w_type,'\\.')[[1]][2]
+  flist = list.files(ssd_path, glob2rx(paste('*','.',ext,'$',sep='')),full.names = T)
+  fname = list.files(ssd_path, glob2rx(paste('*','.',ext,'$',sep='')),full.names = F)
+  file.copy(from=flist, to=file.path(out_path,fname),
+         overwrite = T, recursive = F, copy.mode = T)
+  file.remove(flist)
+  print(paste('copying ',fname ))
+}
