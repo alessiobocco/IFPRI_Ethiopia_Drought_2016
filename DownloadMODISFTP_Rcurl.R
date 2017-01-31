@@ -176,19 +176,18 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
   band_subset = "1 1 0 0 0 0 0 0 0 0 1 1"  # EVI 1 1 0 0 0 0 0 0 0 0 1 1# Example: first seven and last layer'1 1 1 1 1 1 1 0 0 0 0 1" landcover= "1 1 0 0 1 1 1 0 0 1 1 0 0 0 0 0"
   output_pattern = '250m_16_days_EVI.tif' # '250m_16_days_EVI.tif' looks for existing EVI tif files to avoid repeating  Land_Cover_Type_1.tif
    
-  tifs = list.files(getwd(),pattern =  output_pattern)
-  
   for (i in (1:length(files$reproj_files))){
       print(i)
       print(paste(i,'out of',length(files$reproj_files)))
       print(paste("Writing out tiffs ", list.files('.',pattern =  files$reproj_files[i] ),' for date ',files$yeardoy[i]))
+      tifs = list.files(getwd(),pattern =  output_pattern)
       
       if(length(tifs[grep(tifs,pattern=paste(files$products[i],files$yeardoy[i],files$tiles[i],sep='_'))])>=1){ print('File exists')
           next
       }else{
           print(paste('Input:',files$reproj_files[i],' Output:',paste(files$products[i],'_',files$yeardoy[i],'.tif',sep='')))
           reprojectHDF(hdfName = files$short_name[i],
-                     filename=  file.path(getwd(),paste(files$products[i],'_',files$yeardoy[i],'_',files$tiles[i],'.tif',sep='')),  
+                     filename=paste(files$products[i],'_',files$yeardoy[i],'_',files$tiles[i],'.tif',sep=''),  
                      MRTpath=MRT, proj_type='SIN', 
                      proj_params='6371007.181 0 0 0', 
                      datum='NODATUM', pixel_size=250,
@@ -709,8 +708,8 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
  #       Polys_sub[[layer]] = as.numeric(mean)
  #}
 
- writeOGR(obj=Polys_sub, dsn="/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/EnumerationAreas/",
-	 layer="EnumerationAreasSIN_sub_agss_codes_wdata", driver="ESRI Shapefile")
+ #writeOGR(obj=Polys_sub, dsn="/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/EnumerationAreas/",
+ #	 layer="EnumerationAreasSIN_sub_agss_codes_wdata", driver="ESRI Shapefile")
 
  
  # pull ETA PET data to polygons 
@@ -756,11 +755,11 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
  cbind(Polys_sub_data[1,],PET_summary[[1]])
 
 
-cbind.fill <- function(...) {                                                                                                                        
+cbind.fill <- function(...) {                                                      
   require(plyr) # requires plyr for rbind.fill()
-  transpoted <- lapply(list(...),t)                                                                                                                 
-  transpoted_dataframe <- lapply(transpoted, as.data.frame)                                                                                           
-  return (data.frame(t(rbind.fill(transpoted_dataframe))))                                                                                        
+  transpoted <- lapply(list(...),t)                
+  transpoted_dataframe <- lapply(transpoted, as.data.frame)                        
+  return (data.frame(t(rbind.fill(transpoted_dataframe))))                                                
 }
 
 a = cbind.fill(Polys_sub_data[1,],PET_summary[[1]]$ETA_plant_dates)
