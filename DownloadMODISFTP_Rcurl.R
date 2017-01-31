@@ -697,18 +697,16 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
 
  # pull data to polygons
  # load data
- setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/')
- dist_rcap = raster('./DistanceTransport/EucDist_Rcap_sin.tif')
- roadden = raster('./DistanceTransport/RoadDen_5km_WLRC_sin.tif')
- dist_pp50k = raster('./DistanceTransport/EucDist_pp50k_sin.tif')
- load( "./ETa Anomaly/ETA_stack.RData")
- load('./PET/PET_stack.RData')
-
- for(layer in c('dist_rcap','roadden','dist_pp50k')){
-        values = extract_value_point_polygon(Polys_sub,get(layer),16)
-        mean = do.call('rbind',lapply(values, function(x) if (!is.null(x)) colMeans(x, na.rm=TRUE) else NA ))
-        Polys_sub[[layer]] = as.numeric(mean)
- }
+ #setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/')
+ #dist_rcap = raster('./DistanceTransport/EucDist_Rcap_sin.tif')
+ #roadden = raster('./DistanceTransport/RoadDen_5km_WLRC_sin.tif')
+ #dist_pp50k = raster('./DistanceTransport/EucDist_pp50k_sin.tif')
+ #
+ # for(layer in c('dist_rcap','roadden','dist_pp50k')){
+ #       values = extract_value_point_polygon(Polys_sub,get(layer),16)
+ #       mean = do.call('rbind',lapply(values, function(x) if (!is.null(x)) colMeans(x, na.rm=TRUE) else NA ))
+ #       Polys_sub[[layer]] = as.numeric(mean)
+ #}
 
  writeOGR(obj=Polys_sub, dsn="/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/EnumerationAreas/",
 	 layer="EnumerationAreasSIN_sub_agss_codes_wdata", driver="ESRI Shapefile")
@@ -716,18 +714,58 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
  
  # pull ETA PET data to polygons 
 
- #setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/')
+ setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/')
  #load('./PET/PET_stack.RData')
  #load('./ETa Anomaly/ETA_stack.RData')
  #Poly_PET_Ext_sub = extract_value_point_polygon(Polys_sub,PET_stack,15)
  #save(Poly_PET_Ext_sub,
  #      file=paste('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/Processed Panel/ExtractRaw/',
  #      'Poly_PET_Ext_sub.RData',sep=''))
- Poly_ETA_Ext_sub = extract_value_point_polygon(Polys_sub,ETA_stack,15)
- save(Poly_ETA_Ext_sub,
-       file=paste('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/Processed Panel/ExtractRaw/',
-       'Poly_ETA_Ext_sub.RData',sep=''))
+ #Poly_ETA_Ext_sub = extract_value_point_polygon(Polys_sub,ETA_stack,15)
+ #save(Poly_ETA_Ext_sub,
+ #      file=paste('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/Processed Panel/ExtractRaw/',
+ #      'Poly_ETA_Ext_sub.RData',sep=''))
 
+ load('./Processed Panel/ExtractRaw/Poly_PET_Ext_sub.RData')
+ load('./Processed Panel/ExtractRaw/Poly_ETA_Ext_sub.RData')
+
+ # Get summary statistics lists
+  extr_values = Poly_PET_Ext_sub
+  Veg_Annual_Summary = NDVI_summary
+  name_prefix = 'PET'
+  Quant_percentile=0.90
+  num_workers = 10
+  spline_spar = 0
+
+  PET_summary =  Annual_Summary_Functions_OtherData(extr_values, PlantHarvestTable, Veg_Annual_Summary,name_prefix,
+        Quant_percentile=0.95,return_df=F,num_workers=5,spline_spar = 0,aggregate=T)
+  extr_values= Poly_ETA_Ext_sub
+  name_prefix = 'ETA'
+  ETA_summary =  Annual_Summary_Functions_OtherData(extr_values, PlantHarvestTable, Veg_Annual_Summary,name_prefix,
+        Quant_percentile=0.95,return_df=F,num_workers=5,spline_spar = 0,aggregate=T)
+
+
+
+ # Convert data to panel format --------------------------------------------
+
+ Polys_sub = readOGR('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/EnumerationAreas/','EnumerationAreasSIN_sub_agss_codes_wdata',
+        stringsAsFactors = F)
+ Polys_sub_data = Polys_sub@data
+
+ cbind(Polys_sub_data[1,],PET_summary[[1]])
+
+
+cbind.fill <- function(...) {                                                                                                                        
+  require(plyr) # requires plyr for rbind.fill()
+  transpoted <- lapply(list(...),t)                                                                                                                 
+  transpoted_dataframe <- lapply(transpoted, as.data.frame)                                                                                           
+  return (data.frame(t(rbind.fill(transpoted_dataframe))))                                                                                        
+}
+
+a = cbind.fill(Polys_sub_data[1,],PET_summary[[1]]$ETA_plant_dates)
+
+head(as.data.frame(
+rbindlist(PET_summary[[1]])
 
 
  # Visualize examples of smoothed data -------------------------------------

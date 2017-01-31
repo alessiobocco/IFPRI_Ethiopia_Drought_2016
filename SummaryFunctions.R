@@ -940,10 +940,8 @@ writeRasterLustre = function(obj, obj_name_w_type ,out_path, ssd_path){
 
 
 
-
-
-Annual_Summary_Functions_OtherData=function(extr_values, PlantHarvestTable, Veg_Annual_Summary,
-	Quant_percentile=0.95,return_df=F,num_workers=5,spline_spar = 0){
+Annual_Summary_Functions_OtherData = function(extr_values, PlantHarvestTable, Veg_Annual_Summary,name_prefix,
+	Quant_percentile=0.95,return_df=F,num_workers=5,spline_spar = 0,aggregate=T){
      # take in values from extract_value_point_polygon, estimates plant harvest from Veg_Annual_Summary
      # and create annual and global summary statistics for other datasets
      # returns a list where elements are composed of annual and growing season statistics
@@ -954,9 +952,10 @@ Annual_Summary_Functions_OtherData=function(extr_values, PlantHarvestTable, Veg_
      # iterate between spatial objects
      require(MESS)
 
+
      registerDoParallel(num_workers)
      result_summary=foreach(i = 1:length(extr_values),.packages=c('raster','zoo'),.inorder=T) %dopar%{
-        if(sum(!is.na(extr_values[[i]]))==0){ print('Empty Object');return(NA)} # avoid empties
+        if(sum(is.na(extr_values[[i]]))>0|is.null(dim(Veg_Annual_Summary[[i]]))){print('Empty Object');return(NA)} # avoid empties
 
         # if aggregate = T, summarize multiple pixels per polygon into one smooth time series
         # create a mean value for input data
@@ -1059,9 +1058,10 @@ Annual_Summary_Functions_OtherData=function(extr_values, PlantHarvestTable, Veg_
             quantile(x,p=Quant_percentile,type=8,na.rm=T)),length(G_AUC[[z]])) })
     	for(z in 1:length(T_G_Qnt)){names(T_G_Qnt[[z]])=names(G_AUC[[z]])}  # change names
 
+	print(i)
 
         # collect all data products w/o rice
-    	out = list(smooth_stat = smooth,plant_dates=plant_dates,harvest_dates=harvest_dates,A_mn=A_mn,
+    	out = list(plant_dates=plant_dates,harvest_dates=harvest_dates,A_mn=A_mn,
 		A_min=A_min,A_max=A_max,A_AUC=A_AUC,A_Qnt=A_Qnt,A_sd=A_sd,A_max_Qnt=A_max_Qnt,A_AUC_Qnt=A_AUC_Qnt,
 		G_mx_dates=G_mx_dates,G_mn=G_mn,G_min=G_min,G_mx=G_mx,G_AUC=G_AUC,G_Qnt=G_Qnt,G_mx_Qnt=G_mx_Qnt,G_AUC_Qnt=G_AUC_Qnt,G_AUC2=G_AUC2,
 		G_AUC_leading=G_AUC_leading,G_AUC_trailing=G_AUC_trailing,G_AUC_diff_mn=G_AUC_diff_mn,
@@ -1072,33 +1072,30 @@ Annual_Summary_Functions_OtherData=function(extr_values, PlantHarvestTable, Veg_
 	#####################################################################
 
   	out = lapply(out,unlist) # unlist elements
-	
+	names(out) = paste(name_prefix,names(out),sep='_')# add prefix
   	# convert dates back
-  	out$plant_dates = as.Date(out$plant_dates,origin=as.Date('1970-01-01'))
-        out$harvest_dates = as.Date(out$harvest_dates,origin=as.Date('1970-01-01'))
-        out$G_mx_dates = as.Date(out$G_mx_dates,origin=as.Date('1970-01-01'))
+  	out[paste(name_prefix,'plant_dates',sep='_')][[1]] = 
+		as.Date(out[paste(name_prefix,'plant_dates',sep='_')][[1]],origin=as.Date('1970-01-01'))
+        out[paste(name_prefix,'harvest_dates',sep='_')][[1]] = 
+		as.Date(out[paste(name_prefix,'harvest_dates',sep='_')][[1]],origin=as.Date('1970-01-01'))
+        out[paste(name_prefix,'harvest_dates',sep='_')][[1]]  = 
+		as.Date(out[paste(name_prefix,'G_mx_dates',sep='_')][[1]],origin=as.Date('1970-01-01'))
 
-        names(out$plant_dates)=format( out$plant_dates,'%Y') # add year names
-        names(out$harvest_dates) = names(out$plant_dates)
-	if(exists('RicePlantHarvest')){
-		out$rice_plant_dates = as.Date(out$rice_plant_dates,origin=as.Date('1970-01-01'))
-	        out$rice_harvest_dates = as.Date(out$rice_harvest_dates,origin=as.Date('1970-01-01'))
-		out$R_mx_dates = as.Date(out$R_mx_dates,origin=as.Date('1970-01-01'))
-		names(out$rice_plant_dates)=format( out$rice_plant_dates,'%Y') # add year names
-  		names(out$rice_harvest_dates) = names(out$rice_plant_dates)
-	}
+        names(out[paste(name_prefix,'plant_dates',sep='_')][[1]]) = 
+		format( out[paste(name_prefix,'plant_dates',sep='_')][[1]],'%Y') # add year names
+        names(out[paste(name_prefix,'harvest_dates',sep='_')][[1]]) = 
+		names(out[paste(name_prefix,'plant_dates',sep='_')][[1]] ) # keep same as plpant dates
+
   	# check if data frame or list should be returned
   	if(return_df ==F)return(out)
   	if(return_df ==T){
     		test = lapply(1:length(out),function(x) as.data.frame(out[x]))
     		for(j in 1:length(test)){test[[j]]$row = row.names(test[[j]])} # add rowname for join
     		mymerge = function(x,y){merge(x,y,by='row',all=T)}
-    		test = Reduce(mymerge,test[names(out) %in% c("plant_dates","harvest_dates","A_mn","A_min",
+    		test = Reduce(mymerge,test[names(out) %in% paste(name_prefix,c("plant_dates","harvest_dates","A_mn","A_min",
     			"A_max","A_AUC",'A_max_Qnt','A_AUC_Qnt','A_Qnt','A_sd',"G_mx_dates","G_mn","G_min",
     			"G_mx","G_AUC",'G_Qnt','G_mx_Qnt','G_AUC_Qnt','G_AUC2',"G_AUC_leading",
-    			"G_AUC_trailing","G_AUC_diff_mn",'G_AUC_diff_90th','G_sd','T_G_Qnt',
-			'rice_plant_dates','rice_harvest_dates','R_mx_dates','R_mn','R_min','R_mx','R_AUC','R_Qnt','R_mx_Qnt',
-			'R_AUC_Qnt','R_AUC2','R_AUC_leading','R_AUC_trailing','R_Qnt') ])
+    			"G_AUC_trailing","G_AUC_diff_mn",'G_AUC_diff_90th','G_sd','T_G_Qnt'),sep='_') ])
     		test = cbind(i,test)
     		return(test)
   	  } 
