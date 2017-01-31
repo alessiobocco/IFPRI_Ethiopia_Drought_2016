@@ -226,10 +226,11 @@
          # calculate area under the curve by period of the year using spline estimation
          # x = data, dates_in=asDate(dates),DOY_start_in=asDate(list of start periods),DOY_end_in=asDate(list of end per
          # x = plotdatasmoothed$EVI,dates_in = plotdatasmoothed$dates , DOY_start_in= plant_dates ,DOY_end_in=harvest_dates)
-        if(class(dates_in)[1]== "POSIXct"|class(dates_in)[1]== "POSIXlt" )dates_in = as.Date(dates_in)
+         if(class(dates_in)[1]== "POSIXct"|class(dates_in)[1]== "POSIXlt" )dates_in = as.Date(dates_in)
          dates_group = rep(0,length(dates_in))    # create storage for factors of periods
          # get sequences of periods of inerest
-         seq_interest = lapply(1:length(DOY_start_in),function(z){seq(DOY_start_in[z],DOY_end_in[z],by='days')})
+         seq_interest = lapply(1:length(na.omit(DOY_start_in)),function(z){  # avoid starting date with NA
+		 seq(DOY_start_in[z],DOY_end_in[z],by='days')})
          # switch dates-group to period group
          years_avail = sort(as.numeric(unique(unlist(
                 lapply(seq_interest,function(z) format(z,'%Y'))))))
@@ -237,7 +238,8 @@
 		            dates_group[dates_in %in% seq_interest[[z]]]=years_avail[z]
                 assign('dates_group',dates_group,envir = .GlobalEnv) }  # assign doesn't work in lapply using for loop instead
 	      # calculate AUC for periods of interest
-         FUN = function(q,w){auc(q,w,type='spline')}
+         FUN = function(q,w){
+		if(length(w)>1){auc(q,w,type='spline')}else{w}} # if only one date available return that value
          datesY = format(dates_in,'%Y')
          data.split = split(x_in,dates_group)
          d = do.call(c,lapply(2:length(data.split),function(z){   # start at 2 to avoid group=0
@@ -954,14 +956,14 @@ Annual_Summary_Functions_OtherData = function(extr_values, PlantHarvestTable, Ve
 
 
      registerDoParallel(num_workers)
-     result_summary=foreach(i = 1:length(extr_values),.packages=c('raster','zoo'),.inorder=T) %dopar%{
+     result_summary=foreach(i = 1:length(extr_values),.packages=c('raster','zoo'),.inorder=T,.errorhandling='pass') %dopar%{
         if(sum(is.na(extr_values[[i]]))>0|is.null(dim(Veg_Annual_Summary[[i]]))){print('Empty Object');return(NA)} # avoid empties
 
         # if aggregate = T, summarize multiple pixels per polygon into one smooth time series
         # create a mean value for input data
       	if(aggregate == T){
               	row_names = names(extr_values[[i]])
-              	extr_values[[i]] = t(as.data.frame(colMeans( extr_values[[i]],na.rm=T )))
+             	extr_values[[i]] = t(as.data.frame(colMeans( extr_values[[i]],na.rm=T )))
       		names(extr_values[[i]]) = row_names
       		row.names( extr_values[[i]] ) = NULL}
       
@@ -977,6 +979,7 @@ Annual_Summary_Functions_OtherData = function(extr_values, PlantHarvestTable, Ve
 		  function(z) as.numeric(extr_values[[i]][z,]))	}
 
 	# grab plant and harvest dates from Veg_Annual_Summary      
+	if(is.na(Veg_Annual_Summary[[i]])){return(NA)}                        # return NA if no plant or harvest dates are available 
 	plant_dates = list(na.omit(Veg_Annual_Summary[[i]]$plant_dates))
         harvest_dates = list(na.omit(Veg_Annual_Summary[[i]]$harvest_dates))
 
@@ -1009,9 +1012,9 @@ Annual_Summary_Functions_OtherData = function(extr_values, PlantHarvestTable, Ve
 
 
         # Growing season statistics
-        G_mx_dates = lapply(1:length(smooth),function(z){ PeriodAggregatorDates(x = smooth[[z]],
-                dates_in = dats, date_range_st=plant_dates[[z]],
-                date_range_end=harvest_dates[[z]], by_in='days',FUN=function(x) max(x,na.rm=T))})
+        # dont need get from Veg_Annual_Summary G_mx_dates = lapply(1:length(smooth),function(z){ PeriodAggregatorDates(x = smooth[[z]],
+                #dates_in = dats, date_range_st=plant_dates[[z]],
+                #date_range_end=harvest_dates[[z]], by_in='days',FUN=function(x) max(x,na.rm=T))})
         G_mn = lapply(1:length(smooth),function(z){ PeriodAggregator(x = smooth[[z]],
                 dates_in = dats, date_range_st=plant_dates[[z]],
                 date_range_end=harvest_dates[[z]], by_in='days',FUN=function(x) mean(x,na.rm=T)) })
@@ -1037,10 +1040,13 @@ Annual_Summary_Functions_OtherData = function(extr_values, PlantHarvestTable, Ve
       	G_AUC2 = lapply(1:length(smooth),function(z){ PeriodAUC_method2(x_in = smooth[[z]],dates_in = dats,
                 DOY_start_in=plant_dates[[z]],DOY_end_in=harvest_dates[[z]]) })
         G_AUC_leading  = lapply(1:length(smooth),function(z){ PeriodAUC(x_in = smooth[[z]],dates_in = dats,
-                DOY_start_in=plant_dates[[z]],DOY_end_in=G_mx_dates[[z]]) })
+                DOY_start_in=plant_dates[[1]],DOY_end_in=Veg_Annual_Summary[[i]]$G_mx_dates) })
+
         G_AUC_trailing = lapply(1:length(smooth),function(z){ PeriodAUC(x_in = smooth[[z]],dates_in = dats,
-                DOY_start_in=G_mx_dates[[z]],DOY_end_in=harvest_dates[[z]]) })
-	      G_Qnt =  lapply(1:length(smooth),function(z){ PeriodAggregator(x = smooth[[z]],
+                DOY_start_in=Veg_Annual_Summary[[i]]$G_mx_dates,DOY_end_in=harvest_dates[[1]]) })
+
+
+  	G_Qnt =  lapply(1:length(smooth),function(z){ PeriodAggregator(x = smooth[[z]],
                 dates_in = dats, date_range_st=plant_dates[[z]],
                 date_range_end=harvest_dates[[z]], by_in='days',FUN=function(x) quantile(x,p=Quant_percentile,type=8,na.rm=T))})
 
@@ -1058,12 +1064,10 @@ Annual_Summary_Functions_OtherData = function(extr_values, PlantHarvestTable, Ve
             quantile(x,p=Quant_percentile,type=8,na.rm=T)),length(G_AUC[[z]])) })
     	for(z in 1:length(T_G_Qnt)){names(T_G_Qnt[[z]])=names(G_AUC[[z]])}  # change names
 
-	print(i)
-
         # collect all data products w/o rice
     	out = list(plant_dates=plant_dates,harvest_dates=harvest_dates,A_mn=A_mn,
 		A_min=A_min,A_max=A_max,A_AUC=A_AUC,A_Qnt=A_Qnt,A_sd=A_sd,A_max_Qnt=A_max_Qnt,A_AUC_Qnt=A_AUC_Qnt,
-		G_mx_dates=G_mx_dates,G_mn=G_mn,G_min=G_min,G_mx=G_mx,G_AUC=G_AUC,G_Qnt=G_Qnt,G_mx_Qnt=G_mx_Qnt,G_AUC_Qnt=G_AUC_Qnt,G_AUC2=G_AUC2,
+		G_mn=G_mn,G_min=G_min,G_mx=G_mx,G_AUC=G_AUC,G_Qnt=G_Qnt,G_mx_Qnt=G_mx_Qnt,G_AUC_Qnt=G_AUC_Qnt,G_AUC2=G_AUC2,
 		G_AUC_leading=G_AUC_leading,G_AUC_trailing=G_AUC_trailing,G_AUC_diff_mn=G_AUC_diff_mn,
 		G_AUC_diff_90th=G_AUC_diff_90th,T_G_Qnt=T_G_Qnt,G_sd=G_sd
 		)
@@ -1078,8 +1082,8 @@ Annual_Summary_Functions_OtherData = function(extr_values, PlantHarvestTable, Ve
 		as.Date(out[paste(name_prefix,'plant_dates',sep='_')][[1]],origin=as.Date('1970-01-01'))
         out[paste(name_prefix,'harvest_dates',sep='_')][[1]] = 
 		as.Date(out[paste(name_prefix,'harvest_dates',sep='_')][[1]],origin=as.Date('1970-01-01'))
-        out[paste(name_prefix,'harvest_dates',sep='_')][[1]]  = 
-		as.Date(out[paste(name_prefix,'G_mx_dates',sep='_')][[1]],origin=as.Date('1970-01-01'))
+        #out[paste(name_prefix,'G_mx_dates',sep='_')][[1]]  = 
+	#	as.Date(out[paste(name_prefix,'G_mx_dates',sep='_')][[1]],origin=as.Date('1970-01-01'))
 
         names(out[paste(name_prefix,'plant_dates',sep='_')][[1]]) = 
 		format( out[paste(name_prefix,'plant_dates',sep='_')][[1]],'%Y') # add year names
@@ -1093,7 +1097,7 @@ Annual_Summary_Functions_OtherData = function(extr_values, PlantHarvestTable, Ve
     		for(j in 1:length(test)){test[[j]]$row = row.names(test[[j]])} # add rowname for join
     		mymerge = function(x,y){merge(x,y,by='row',all=T)}
     		test = Reduce(mymerge,test[names(out) %in% paste(name_prefix,c("plant_dates","harvest_dates","A_mn","A_min",
-    			"A_max","A_AUC",'A_max_Qnt','A_AUC_Qnt','A_Qnt','A_sd',"G_mx_dates","G_mn","G_min",
+    			"A_max","A_AUC",'A_max_Qnt','A_AUC_Qnt','A_Qnt','A_sd',"G_mn","G_min",
     			"G_mx","G_AUC",'G_Qnt','G_mx_Qnt','G_AUC_Qnt','G_AUC2',"G_AUC_leading",
     			"G_AUC_trailing","G_AUC_diff_mn",'G_AUC_diff_90th','G_sd','T_G_Qnt'),sep='_') ])
     		test = cbind(i,test)
@@ -1103,3 +1107,33 @@ Annual_Summary_Functions_OtherData = function(extr_values, PlantHarvestTable, Ve
   }
 
 
+##arrange df vars by position
+##'vars' must be a named vector, e.g. c("var.name"=1)
+arrange.vars <- function(data, vars){
+    ##stop if not a data.frame (but should work for matrices as well)
+    stopifnot(is.data.frame(data))
+
+    ##sort out inputs
+    data.nms <- names(data)
+    var.nr <- length(data.nms)
+    var.nms <- names(vars)
+    var.pos <- vars
+    ##sanity checks
+    stopifnot( !any(duplicated(var.nms)), 
+               !any(duplicated(var.pos)) )
+    stopifnot( is.character(var.nms), 
+               is.numeric(var.pos) )
+    stopifnot( all(var.nms %in% data.nms) )
+    stopifnot( all(var.pos > 0), 
+               all(var.pos <= var.nr) )
+
+    ##prepare output
+    out.vec <- character(var.nr)
+    out.vec[var.pos] <- var.nms
+    out.vec[-var.pos] <- data.nms[ !(data.nms %in% var.nms) ]
+    stopifnot( length(out.vec)==var.nr )
+
+    ##re-arrange vars by position
+    data <- data[ , out.vec]
+    return(data)
+}

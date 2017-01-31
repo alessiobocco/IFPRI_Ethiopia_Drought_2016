@@ -309,33 +309,39 @@ name_prefix = 'PET'
 Quant_percentile=0.90
 num_workers = 10
 spline_spar = 0
-
-PET_summary =  Annual_Summary_Functions_OtherData(extr_values, PlantHarvestTable, Veg_Annual_Summary,name_prefix,
-                                                  Quant_percentile=0.95,return_df=F,num_workers=5,spline_spar = 0,aggregate=T)
+aggregate=T
+PET_summary =  Annual_Summary_Functions_OtherData(extr_values=Poly_PET_Ext_sub, PlantHarvestTable, Veg_Annual_Summary,name_prefix,
+                                                  Quant_percentile=0.95,return_df=T,num_workers=5,spline_spar,aggregate)
 extr_values= Poly_ETA_Ext_sub
 name_prefix = 'ETA'
 ETA_summary =  Annual_Summary_Functions_OtherData(extr_values, PlantHarvestTable, Veg_Annual_Summary,name_prefix,
-                                                  Quant_percentile=0.95,return_df=F,num_workers=5,spline_spar = 0,aggregate=T)
-
+                                                  Quant_percentile=0.95,return_df=T,num_workers=5,spline_spar = 0,aggregate=T)
 
 
 # Convert data to panel format --------------------------------------------
-
+library(plyr)
 Polys_sub = readOGR('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/EnumerationAreas/','EnumerationAreasSIN_sub_agss_codes_wdata',
                     stringsAsFactors = F)
 Polys_sub_data = Polys_sub@data
 
-cbind(Polys_sub_data[1,],PET_summary[[1]])
+Polys_sub_data$i = 1:dim(Polys_sub_data)[1]  # add id to join to 
 
-
-cbind.fill <- function(...) {                                                      
-  require(plyr) # requires plyr for rbind.fill()
-  transpoted <- lapply(list(...),t)                
-  transpoted_dataframe <- lapply(transpoted, as.data.frame)                        
-  return (data.frame(t(rbind.fill(transpoted_dataframe))))                                                
+holder_list = list()
+for(i in 1549:dim(Polys_sub_data)[1]){
+	print(paste('working on row ', i))
+	holder_summary = data.frame(row = seq(2010,2016),i=i)
+	holder_summary = join(holder_summary,Polys_sub_data[i,!(names(Polys_sub_data) %in% c('Remark','UK_NAME','UK_CODE',
+                'EA_ID','UK_ID','EA_CODE','W_cod_t','KK_cd_T','KK_NAME','KK_CODE'))],by=c('i'),type='left')
+	if(length(NDVI_summary[[i]])!=1 ){  # avoid missing values 
+   	holder_summary = join(holder_summary,NDVI_summary[[i]],by=c('i','row'),type='left')} # join shp to vegetation data 
+        if(length(PET_summary[[i]])!=1){
+	holder_summary = join(holder_summary,PET_summary[[i]][,!(names(PET_summary[[i]]) %in% c('PET_plant_dates','PET_harvest_dates','PET_A_max_Qnt',
+                'PET_A_AUC_Qnt','PET_G_mx_dates','PET_G_mx_Qnt','PET_G_AUC_Qnt','PET_T_G_Qnt'))],by=c('i','row'),type='left')}
+        if(length(ETA_summary[[i]])!=1){
+	holder_summary = join(holder_summary, ETA_summary[[i]][,!(names(ETA_summary[[i]]) %in% c('ETA_plant_dates','ETA_harvest_dates','ETA_A_max_Qnt',
+                'ETA_A_AUC_Qnt','ETA_G_mx_dates','ETA_G_mx_Qnt','ETA_G_AUC_Qnt','ETA_T_G_Qnt'))],by=c('i','row'),type='left')} 
+	names(holder_summary)[names(holder_summary)=='row']='Year'
+	holder_summary = arrange.vars(holder_summary, c("Year"=2))
+	holder_list[[i]] = holder_summary
 }
 
-a = cbind.fill(Polys_sub_data[1,],PET_summary[[1]]$ETA_plant_dates)
-
-head(as.data.frame(
-  rbindlist(PET_summary[[1]])
