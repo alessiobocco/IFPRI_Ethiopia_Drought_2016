@@ -236,7 +236,7 @@
                 lapply(seq_interest,function(z) format(z,'%Y'))))))
          for(z in 1:length(seq_interest)){        #assigns year for beginging of planting season
 		            dates_group[dates_in %in% seq_interest[[z]]]=years_avail[z]
-                assign('dates_group',dates_group,envir = .GlobalEnv) }  # assign doesn't work in lapply using for loop instead
+                assign('dates_group',dates_group) }  #envir = .GlobalEnv assign doesn't work in lapply using for loop instead
 	      # calculate AUC for periods of interest
          FUN = function(q,w){
 		if(length(w)>1){auc(q,w,type='spline')}else{w}} # if only one date available return that value
@@ -264,8 +264,8 @@
                 lapply(seq_interest,function(z) format(z,'%Y'))))))
          for(z in 1:length(seq_interest)){        #assigns year for beginging of planting season
                 dates_group[dates_in %in% seq_interest[[z]]]=years_avail[z]
-                assign('dates_group',dates_group,envir = .GlobalEnv) }  # assign doesn't work in lapply using for loop instead
- 
+                assign('dates_group',dates_group) }  # assign doesn't work in lapply using for loop instead
+
         # calculate AUC for periods of interest
          FUN = function(q,w){  sum(diff(q)*rollmean(w,2))}
          datesY = format(dates_in,'%Y')
@@ -957,7 +957,8 @@ Annual_Summary_Functions_OtherData = function(extr_values, PlantHarvestTable, Ve
 
      registerDoParallel(num_workers)
      result_summary=foreach(i = 1:length(extr_values),.packages=c('raster','zoo'),.inorder=T,.errorhandling='pass') %dopar%{
-        if(sum(is.na(extr_values[[i]]))>0|is.null(dim(Veg_Annual_Summary[[i]]))){print('Empty Object');return(NA)} # avoid empties
+ 	print(i)
+       if(sum(is.na(extr_values[[i]]))>0|is.null(dim(Veg_Annual_Summary[[i]]))){print('Empty Object');return(NA)} # avoid empties
 
         # if aggregate = T, summarize multiple pixels per polygon into one smooth time series
         # create a mean value for input data
@@ -1043,7 +1044,7 @@ Annual_Summary_Functions_OtherData = function(extr_values, PlantHarvestTable, Ve
                 DOY_start_in=plant_dates[[1]],DOY_end_in=Veg_Annual_Summary[[i]]$G_mx_dates) })
 
         G_AUC_trailing = lapply(1:length(smooth),function(z){ PeriodAUC(x_in = smooth[[z]],dates_in = dats,
-                DOY_start_in=Veg_Annual_Summary[[i]]$G_mx_dates,DOY_end_in=harvest_dates[[1]]) })
+                DOY_start_in=na.omit(Veg_Annual_Summary[[i]]$G_mx_dates),DOY_end_in=harvest_dates[[1]]) })
 
 
   	G_Qnt =  lapply(1:length(smooth),function(z){ PeriodAggregator(x = smooth[[z]],
@@ -1051,8 +1052,9 @@ Annual_Summary_Functions_OtherData = function(extr_values, PlantHarvestTable, Ve
                 date_range_end=harvest_dates[[z]], by_in='days',FUN=function(x) quantile(x,p=Quant_percentile,type=8,na.rm=T))})
 
 
-    	# G_AUC_trailing lag by one year if growing season is over new year
-    	names(G_AUC_trailing[[1]]) = names(G_AUC_leading[[1]])
+    	# G_AUC_trailing lag by one year if growing season is over new year but ensure length is correct
+    	names(G_AUC_trailing[[1]]) = seq(as.numeric(names(G_AUC_leading[[1]][1])),length.out=length(G_AUC_trailing[[1]]))
+
     	# compare AUC annual to mean AUC and 90th percentile AUC
     	G_AUC_diff_mn = lapply(1:length(smooth),function(z){ G_AUC[[z]] - mean(G_AUC[[z]],na.rm=T) })
     	G_AUC_diff_90th = lapply(1:length(smooth),function(z){ G_AUC[[z]] - quantile(G_AUC[[z]],p=0.9,type=8,na.rm=T) })

@@ -46,25 +46,11 @@ lapply(1:length(functions_in), function(x){cmpfun(get(functions_in[[x]]))})  # b
 
 # Set up parameters -------------------------------------------------------
 
-
-# give path to Modis Reproduction Tool
-MRT = 'H:/Projects/MRT/bin'
-
-# get list of all available modis products
-#GetProducts()
-
 # Product Filters 
 products =  c('MYD13Q1')  #EVI c('MYD13Q1','MOD13Q1')  , land cover = 'MCD12Q1' for 250m and landcover ='MCD12Q2'
 location = c(9.145000, 40.489673)  # Lat Lon of a location of interest within your tiles listed above #India c(-31.467934,-57.101319)  #
 tiles =   c('h21v07','h22v07','h21v08','h22v08')   # India example c('h13v12')
 dates = c('2011-01-01','2016-03-30') # example c('year-month-day',year-month-day') c('2002-07-04','2016-02-02') 
-ftp = 'ftp://ladsweb.nascom.nasa.gov/allData/6/'    # allData/6/ for evi, /51/ for landcover
-# allData/51/ for landcover DOESn't WORK jUST PULL FROM FTP
-strptime(gsub("^.*A([0-9]+).*$", "\\1",GetDates(location[1], location[2],products[1])),'%Y%j') # get list of all available dates for products[1]
-#  out_dir = 'R:\\Mann_Research\\IFPRI_Ethiopia_Drought_2016\\Data\\VegetationIndex'
-#  setwd(out_dir)
-
-
 
 
 
@@ -158,6 +144,8 @@ load(flist[1])
 
 
 # Extract data from subset of eas that have agss data --------------------------
+
+
 # this is a subset of data for which agss data contains relevant crop data 
 
 setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/Data Stacks/WO Clouds Clean LC/')
@@ -187,6 +175,7 @@ product = c('NDVI','EVI')[1]
 
 
 # prepare other data ---------------------------------------
+
 
 setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/DistanceTransport/')
 
@@ -285,7 +274,8 @@ NDVI_summary =  Annual_Summary_Functions(extr_values, PlantHarvestTable,Quant_pe
 #	 layer="EnumerationAreasSIN_sub_agss_codes_wdata", driver="ESRI Shapefile")
 
 
-# pull ETA PET data to polygons 
+
+# pull ETA PET data to polygons -----------------------------------
 
 setwd('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/')
 #load('./PET/PET_stack.RData')
@@ -303,22 +293,26 @@ load('./Processed Panel/ExtractRaw/Poly_PET_Ext_sub.RData')
 load('./Processed Panel/ExtractRaw/Poly_ETA_Ext_sub.RData')
 
 # Get summary statistics lists
-extr_values = Poly_PET_Ext_sub
-Veg_Annual_Summary = NDVI_summary
+range = c(200:294)
+extr_values = Poly_PET_Ext_sub[range]#[c(1,3,293,294,295,1545)]
+Veg_Annual_Summary = NDVI_summary[range]
 name_prefix = 'PET'
 Quant_percentile=0.90
 num_workers = 10
 spline_spar = 0
 aggregate=T
-PET_summary =  Annual_Summary_Functions_OtherData(extr_values=Poly_PET_Ext_sub, PlantHarvestTable, Veg_Annual_Summary,name_prefix,
-                                                  Quant_percentile=0.95,return_df=T,num_workers=5,spline_spar,aggregate)
+return_df=T
+PET_summary =  Annual_Summary_Functions_OtherData(extr_values, PlantHarvestTable, Veg_Annual_Summary,name_prefix,
+                                                  Quant_percentile,return_df,num_workers=5,spline_spar,aggregate)
 extr_values= Poly_ETA_Ext_sub
 name_prefix = 'ETA'
 ETA_summary =  Annual_Summary_Functions_OtherData(extr_values, PlantHarvestTable, Veg_Annual_Summary,name_prefix,
-                                                  Quant_percentile=0.95,return_df=T,num_workers=5,spline_spar = 0,aggregate=T)
+                                                  Quant_percentile,return_df,num_workers=5,spline_spar = 0,aggregate=T)
 
 
 # Convert data to panel format --------------------------------------------
+
+
 library(plyr)
 Polys_sub = readOGR('/groups/manngroup/IFPRI_Ethiopia_Dought_2016/Data/EnumerationAreas/','EnumerationAreasSIN_sub_agss_codes_wdata',
                     stringsAsFactors = F)
@@ -327,7 +321,7 @@ Polys_sub_data = Polys_sub@data
 Polys_sub_data$i = 1:dim(Polys_sub_data)[1]  # add id to join to 
 
 holder_list = list()
-for(i in 1549:dim(Polys_sub_data)[1]){
+for(i in 1:dim(Polys_sub_data)[1]){
 	print(paste('working on row ', i))
 	holder_summary = data.frame(row = seq(2010,2016),i=i)
 	holder_summary = join(holder_summary,Polys_sub_data[i,!(names(Polys_sub_data) %in% c('Remark','UK_NAME','UK_CODE',
@@ -335,10 +329,12 @@ for(i in 1549:dim(Polys_sub_data)[1]){
 	if(length(NDVI_summary[[i]])!=1 ){  # avoid missing values 
    	holder_summary = join(holder_summary,NDVI_summary[[i]],by=c('i','row'),type='left')} # join shp to vegetation data 
         if(length(PET_summary[[i]])!=1){
-	holder_summary = join(holder_summary,PET_summary[[i]][,!(names(PET_summary[[i]]) %in% c('PET_plant_dates','PET_harvest_dates','PET_A_max_Qnt',
+	holder_summary = join(holder_summary,PET_summary[[i]][,!(names(PET_summary[[i]]) %in% c('PET_plant_dates',
+		'PET_harvest_dates','PET_A_max_Qnt',
                 'PET_A_AUC_Qnt','PET_G_mx_dates','PET_G_mx_Qnt','PET_G_AUC_Qnt','PET_T_G_Qnt'))],by=c('i','row'),type='left')}
         if(length(ETA_summary[[i]])!=1){
-	holder_summary = join(holder_summary, ETA_summary[[i]][,!(names(ETA_summary[[i]]) %in% c('ETA_plant_dates','ETA_harvest_dates','ETA_A_max_Qnt',
+	holder_summary = join(holder_summary, ETA_summary[[i]][,!(names(ETA_summary[[i]]) %in% c('ETA_plant_dates',
+		'ETA_harvest_dates','ETA_A_max_Qnt',
                 'ETA_A_AUC_Qnt','ETA_G_mx_dates','ETA_G_mx_Qnt','ETA_G_AUC_Qnt','ETA_T_G_Qnt'))],by=c('i','row'),type='left')} 
 	names(holder_summary)[names(holder_summary)=='row']='Year'
 	holder_summary = arrange.vars(holder_summary, c("Year"=2))
